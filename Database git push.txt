@@ -73,3 +73,23 @@ ADD COLUMN is_verified TINYINT(1) DEFAULT 0 AFTER password_hash;
 UPDATE users SET is_verified = 0 WHERE is_verified IS NULL;
 
 CREATE INDEX idx_is_verified ON users(is_verified);
+
+
+
+
+
+
+
+USE shelter_auth;
+
+CREATE TABLE IF NOT EXISTS messages (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  room_id BIGINT UNSIGNED NOT NULL,
+  sender_name VARCHAR(120) NOT NULL,
+  sender_email VARCHAR(160) NOT NULL,
+  sender_phone VARCHAR(30),
+  message TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY fk_messages_room (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+  INDEX idx_room_id (room_id)
+);
