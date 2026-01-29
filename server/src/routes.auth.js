@@ -88,4 +88,43 @@ router.post('/login', async (req, res) => {
   }
 })
 
+router.put('/profile', async (req, res) => {
+  const { id, fullName, email, phoneNumber, password } = req.body || {}
+
+  if (!id || !fullName || !email || !phoneNumber) {
+    return res.status(400).json({ message: 'ID, name, email, and phone are required.' })
+  }
+
+  try {
+    let query = 'UPDATE users SET full_name = ?, email = ?, phone_number = ?'
+    let params = [fullName.trim(), normalizeCredential(email), phoneNumber.trim()]
+
+    if (password) {
+      const passwordHash = await bcrypt.hash(password, 10)
+      query += ', password_hash = ?'
+      params.push(passwordHash)
+    }
+
+    query += ' WHERE id = ?'
+    params.push(id)
+
+    const [result] = await db.execute(query, params)
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: 'User not found.' })
+    }
+
+    return res.json({
+      message: 'Profile updated successfully.',
+      user: { id, fullName, email, phoneNumber }
+    })
+  } catch (error) {
+    console.error('Update profile error', error)
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ message: 'Email or phone already in use.' })
+    }
+    return res.status(500).json({ message: 'Failed to update profile.' })
+  }
+})
+
 module.exports = router

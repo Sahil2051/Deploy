@@ -65,8 +65,19 @@ const initialRoomState = {
   contactPhone: '',
 }
 
+interface UserInquiry {
+  id: number
+  room_id: number
+  room_title: string
+  sender_name: string
+  sender_email: string
+  sender_phone: string | null
+  message: string
+  created_at: string
+}
+
 type ViewState = 'home' | 'rooms' | 'premium' | 'docs' | 'room-details'
-type ModalView = 'signup' | 'login' | 'register-room' | 'admin-verify' | null
+type ModalView = 'signup' | 'login' | 'register-room' | 'admin-verify' | 'account' | null
 
 type AdminUser = {
   id: number
@@ -103,6 +114,7 @@ function App() {
   const [allRooms, setAllRooms] = useState<Room[]>([])
   const [filteredRooms, setFilteredRooms] = useState<Room[]>([])
   const [loadingRooms, setLoadingRooms] = useState(false)
+  const [userInquiries, setUserInquiries] = useState<UserInquiry[]>([])
   const [isAdmin, setIsAdmin] = useState(false)
   const [adminMasterPassword, setAdminMasterPassword] = useState('')
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([])
@@ -391,6 +403,76 @@ function App() {
     }
   }
 
+  const fetchUserInquiries = async () => {
+    if (!user) return
+    try {
+      const resp = await fetch(`${API_BASE_URL}/rooms/my-inquiries/${user.id}`)
+      const data = await resp.json()
+      if (resp.ok) setUserInquiries(data.inquiries)
+    } catch (err) {
+      console.error('Fetch inquiries error', err)
+    }
+  }
+
+  const handleUpdateProfile = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const formData = new FormData(e.currentTarget)
+    const payload = {
+      id: user?.id,
+      fullName: formData.get('fullName'),
+      email: formData.get('email'),
+      phoneNumber: formData.get('phoneNumber'),
+      password: formData.get('password') || undefined,
+    }
+
+    try {
+      const resp = await fetch(`${API_BASE_URL}/auth/profile`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      const data = await resp.json()
+      if (resp.ok) {
+        setUser({ ...user!, ...data.user })
+        alert('Profile updated!')
+        closeModal()
+      } else {
+        alert(data.message || 'Update failed')
+      }
+    } catch (err) {
+      alert('Network error')
+    }
+  }
+
+  const handleSendInquiry = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!selectedRoom) return
+    const formData = new FormData(e.currentTarget)
+    const payload = {
+      senderName: formData.get('senderName'),
+      senderEmail: formData.get('senderEmail'),
+      senderPhone: formData.get('senderPhone'),
+      message: formData.get('message'),
+    }
+
+    try {
+      const resp = await fetch(`${API_BASE_URL}/rooms/${selectedRoom.id}/inquire`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      const data = await resp.json()
+      if (resp.ok) {
+        alert('Inquiry sent successfully!')
+        e.currentTarget.reset()
+      } else {
+        alert(data.message || 'Failed to send inquiry')
+      }
+    } catch (err) {
+      alert('Network error')
+    }
+  }
+
   const handleAdminLogout = () => {
     setIsAdmin(false)
     localStorage.removeItem('shelter_admin')
@@ -658,6 +740,17 @@ function App() {
                     ✉️ Email Owner
                   </a>
                 )}
+
+                <div className="inquiry-form-card">
+                  <h4 style={{ marginBottom: '1rem', color: '#1a1f36' }}>Send Inquiry</h4>
+                  <form onSubmit={handleSendInquiry} className="auth-form">
+                    <input type="text" name="senderName" placeholder="Your Name" required className="auth-input" />
+                    <input type="email" name="senderEmail" placeholder="Your Email" required className="auth-input" />
+                    <input type="tel" name="senderPhone" placeholder="Your Phone (Optional)" className="auth-input" />
+                    <textarea name="message" placeholder="I'm interested in this room..." required className="auth-input" style={{ minHeight: '80px', padding: '0.8rem' }} />
+                    <button type="submit" className="primary-cta compact" style={{ width: '100%' }}>Send Message</button>
+                  </form>
+                </div>
               </div>
             </div>
           </div>
@@ -702,6 +795,9 @@ function App() {
                         )}
                       </span>
                     </span>
+                    <button className="account-btn" onClick={() => { setActiveModal('account'); fetchUserInquiries(); }}>
+                      👤 Account
+                    </button>
                     <button className="ghost-cta mini" onClick={handleLogout}>
                       Logout
                     </button>
@@ -1067,7 +1163,7 @@ function App() {
         activeModal && (
           <div className="auth-modal" role="dialog" aria-modal="true">
             <div className="auth-modal__backdrop" onClick={closeModal} />
-            <section className="glass-card auth-panel auth-modal__card">
+            <section className={`glass-card auth-panel auth-modal__card ${activeModal === 'account' ? 'account-modal-wide' : ''}`}>
               <button className="modal-close" onClick={closeModal} aria-label="Close dialog">
                 ×
               </button>
@@ -1204,6 +1300,54 @@ function App() {
                     </div>
                   </div>
                 </>
+              ) : activeModal === 'account' && user ? (
+                <div className="account-modal-layout">
+                  <section>
+                    <h3 className="account-section-title">👤 Account Settings</h3>
+                    <form onSubmit={handleUpdateProfile} className="auth-form" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                      <div className="form-group">
+                        <label className="auth-label">Full Name</label>
+                        <input name="fullName" defaultValue={user.fullName} required className="auth-input" />
+                      </div>
+                      <div className="form-group">
+                        <label className="auth-label">Email Address</label>
+                        <input name="email" type="email" defaultValue={user.email} required className="auth-input" />
+                      </div>
+                      <div className="form-group">
+                        <label className="auth-label">Phone Number</label>
+                        <input name="phoneNumber" type="tel" defaultValue={user.phoneNumber} required className="auth-input" />
+                      </div>
+                      <div className="form-group">
+                        <label className="auth-label">New Password (Optional)</label>
+                        <input name="password" type="password" placeholder="Leave blank to keep current" className="auth-input" />
+                      </div>
+                      <button type="submit" className="primary-cta" style={{ gridColumn: 'span 2' }}>Update Profile</button>
+                    </form>
+                  </section>
+
+                  <section>
+                    <h3 className="account-section-title">✉️ Room Inquiries</h3>
+                    {userInquiries.length === 0 ? (
+                      <p style={{ textAlign: 'center', color: '#9098b7', padding: '2rem' }}>No inquiries yet.</p>
+                    ) : (
+                      <div className="inquiry-grid">
+                        {userInquiries.map(inq => (
+                          <div key={inq.id} className="inquiry-card">
+                            <div className="inquiry-header">
+                              <span className="inquiry-room-tag">{inq.room_title}</span>
+                              <span>{new Date(inq.created_at).toLocaleDateString()}</span>
+                            </div>
+                            <div className="inquiry-sender">{inq.sender_name}</div>
+                            <div className="inquiry-contact">
+                              📧 {inq.sender_email} {inq.sender_phone && `| 📞 ${inq.sender_phone}`}
+                            </div>
+                            <div className="inquiry-message">"{inq.message}"</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                </div>
               ) : (
                 <>
                   <header>

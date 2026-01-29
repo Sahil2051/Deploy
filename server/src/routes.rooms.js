@@ -171,5 +171,49 @@ router.delete('/:roomId', async (req, res) => {
   }
 })
 
+// Send an inquiry for a room
+router.post('/:roomId/inquire', async (req, res) => {
+  const { roomId } = req.params
+  const { senderName, senderEmail, senderPhone, message } = req.body || {}
+
+  if (!senderName || !senderEmail || !message) {
+    return res.status(400).json({ message: 'Name, email, and message are required.' })
+  }
+
+  try {
+    await db.execute(
+      `INSERT INTO messages (room_id, sender_name, sender_email, sender_phone, message)
+       VALUES (?, ?, ?, ?, ?)`,
+      [roomId, senderName.trim(), senderEmail.trim(), senderPhone?.trim() || null, message.trim()]
+    )
+
+    return res.status(201).json({ message: 'Inquiry sent successfully.' })
+  } catch (error) {
+    console.error('Send inquiry error', error)
+    return res.status(500).json({ message: 'Failed to send inquiry.' })
+  }
+})
+
+// Get inquiries for an owner's rooms
+router.get('/my-inquiries/:ownerId', async (req, res) => {
+  const { ownerId } = req.params
+
+  try {
+    const [rows] = await db.execute(
+      `SELECT m.*, r.title as room_title
+       FROM messages m
+       JOIN rooms r ON m.room_id = r.id
+       WHERE r.owner_id = ?
+       ORDER BY m.created_at DESC`,
+      [ownerId]
+    )
+
+    return res.json({ inquiries: rows })
+  } catch (error) {
+    console.error('Get inquiries error', error)
+    return res.status(500).json({ message: 'Failed to fetch inquiries.' })
+  }
+})
+
 module.exports = router
 
