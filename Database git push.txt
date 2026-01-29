@@ -1,0 +1,75 @@
+Open Xampp run MySQL server and Copy and paste this entire below in your shell to make the database 
+
+
+
+Thing to copy paste - 
+
+
+
+
+CREATE DATABASE IF NOT EXISTS shelter_auth
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+USE shelter_auth;
+
+CREATE TABLE users (
+  id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  full_name     VARCHAR(120)       NOT NULL,
+  age           TINYINT UNSIGNED   NOT NULL,
+  address_line  VARCHAR(255)       NOT NULL,
+  email         VARCHAR(160)       NOT NULL,
+  phone_number  VARCHAR(30)        NOT NULL,
+  password_hash CHAR(60)           NOT NULL,
+  created_at    TIMESTAMP          NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMP          NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_users_email (email),
+  UNIQUE KEY uq_users_phone (phone_number)
+);
+
+-- optional audit log (handy for future features)
+CREATE TABLE user_logins (
+  id         BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id    BIGINT UNSIGNED NOT NULL,
+  logged_in_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  ip_address  VARCHAR(45),
+  FOREIGN KEY fk_logins_user (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS rooms (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  owner_id BIGINT UNSIGNED NOT NULL,
+  owner_name VARCHAR(120) NOT NULL,
+  owner_id_number VARCHAR(50),
+  title VARCHAR(200) NOT NULL,
+  description TEXT,
+  address VARCHAR(255) NOT NULL,
+  city VARCHAR(100),
+  price_per_month DECIMAL(10, 2) NOT NULL,
+  room_type VARCHAR(50),
+  bedrooms TINYINT UNSIGNED DEFAULT 1,
+  bathrooms TINYINT UNSIGNED DEFAULT 1,
+  area_sqft INT UNSIGNED,
+  available_from DATE,
+  amenities TEXT,
+  contact_email VARCHAR(160),
+  contact_phone VARCHAR(30),
+  is_available BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY fk_rooms_owner (owner_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_owner_id (owner_id),
+  INDEX idx_is_available (is_available)
+);
+
+
+
+
+
+
+ALTER TABLE users 
+ADD COLUMN is_verified TINYINT(1) DEFAULT 0 AFTER password_hash;
+
+UPDATE users SET is_verified = 0 WHERE is_verified IS NULL;
+
+CREATE INDEX idx_is_verified ON users(is_verified);
