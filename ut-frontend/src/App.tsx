@@ -933,9 +933,9 @@ function App() {
       )}
 
       {currentView === 'room-details' && selectedRoom && (
-        <div style={{ maxWidth: '1000px', margin: '2rem auto' }} className="glass-card">
+        <div style={{ maxWidth: '1000px', margin: '2rem auto' }} className="glass-card room-details-container">
           <button
-            className="ghost-cta mini"
+            className="back-btn"
             onClick={() => setCurrentView('rooms')}
             style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
           >
@@ -984,7 +984,7 @@ function App() {
               <p>{selectedRoom.amenities || 'None listed'}</p>
             </div>
 
-            <div className="sidebar-info glass-card" style={{ height: 'fit-content', padding: '1.5rem', background: 'rgba(255,255,255,0.5)' }}>
+            <div className="sidebar-info glass-card">
               <div style={{ marginBottom: '1.5rem' }}>
                 <span style={{ fontSize: '2rem', fontWeight: 'bold', color: '#7aa8ff' }}>Rs {selectedRoom.price_per_month}</span>
                 <span style={{ color: '#94a3b8' }}> / month</span>
@@ -1011,15 +1011,15 @@ function App() {
                 <div className="inquiry-form-card">
                   <h4 style={{ marginBottom: '1rem', color: '#f8fafc' }}>Send Inquiry</h4>
                   <form onSubmit={handleSendInquiry} className="auth-form">
-                    <input type="text" name="senderName" placeholder="Your Name" required className="auth-input" style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#f8fafc' }} />
-                    <input type="email" name="senderEmail" placeholder="Your Email" required className="auth-input" style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#f8fafc' }} />
-                    <input type="tel" name="senderPhone" placeholder="Your Phone (Optional)" className="auth-input" style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#f8fafc' }} />
-                    <textarea name="message" placeholder="I'm interested in this room..." required className="auth-input" style={{ minHeight: '80px', padding: '0.8rem', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#f8fafc' }} />
+                    <input type="text" name="senderName" placeholder="Your Name" required className="auth-input" />
+                    <input type="email" name="senderEmail" placeholder="Your Email" required className="auth-input" />
+                    <input type="tel" name="senderPhone" placeholder="Your Phone (Optional)" className="auth-input" />
+                    <textarea name="message" placeholder="I'm interested in this room..." required className="auth-input" style={{ minHeight: '80px', padding: '0.8rem' }} />
                     <button type="submit" className="primary-cta compact" style={{ width: '100%' }}>Send Message</button>
                   </form>
                 </div>
 
-                <div className="booking-form-card" style={{ marginTop: '2rem', borderTop: '1px solid #eee', paddingTop: '1.5rem' }}>
+                <div className="booking-form-card">
                   <h4 style={{ marginBottom: '1rem', color: '#f8fafc' }}>Book this Room</h4>
                   <form onSubmit={handleBookingSubmit} className="auth-form">
                     <label style={{ color: '#94a3b8' }}>
@@ -1031,7 +1031,6 @@ function App() {
                         onChange={handleBookingChange}
                         required
                         className="auth-input"
-                        style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#f8fafc' }}
                       />
                     </label>
                     <label style={{ color: '#94a3b8' }}>
@@ -1043,7 +1042,6 @@ function App() {
                         onChange={handleBookingChange}
                         required
                         className="auth-input"
-                        style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#f8fafc' }}
                       />
                     </label>
                     <label style={{ color: '#94a3b8' }}>
@@ -1056,7 +1054,6 @@ function App() {
                         onChange={handleBookingChange}
                         required
                         className="auth-input"
-                        style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#f8fafc' }}
                       />
                     </label>
                     <textarea
@@ -1065,7 +1062,7 @@ function App() {
                       value={bookingData.specialRequests}
                       onChange={handleBookingChange}
                       className="auth-input"
-                      style={{ minHeight: '60px', padding: '0.8rem', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#f8fafc' }}
+                      style={{ minHeight: '60px', padding: '0.8rem' }}
                     />
 
                     {bookingMessage && (
