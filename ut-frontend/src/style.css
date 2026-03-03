@@ -1413,7 +1413,128 @@ blockquote footer {
   }
 }
 
-/* Admin Verify Modal - Privacy/Security Theme */
+/* Premium Plans */
+.premium-plans-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 2rem;
+  margin-top: 3rem;
+}
+
+.premium-plan-card {
+  background: rgba(30, 41, 59, 0.4);
+  border: 1px solid rgba(122, 168, 255, 0.1);
+  border-radius: 24px;
+  padding: 2.5rem;
+  text-align: center;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  backdrop-filter: blur(10px);
+}
+
+.premium-plan-card:hover {
+  transform: translateY(-10px);
+  border-color: rgba(122, 168, 255, 0.4);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3), 0 0 20px rgba(99, 102, 241, 0.1);
+}
+
+.premium-plan-card.highlighted {
+  background: rgba(122, 168, 255, 0.05);
+  border-color: rgba(122, 168, 255, 0.3);
+  box-shadow: 0 0 30px rgba(122, 168, 255, 0.1);
+}
+
+.plan-name {
+  color: #7aa8ff;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-weight: 800;
+  margin-bottom: 1rem;
+}
+
+.plan-price {
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: #fff;
+  margin-bottom: 1.5rem;
+}
+
+.plan-price span {
+  font-size: 1rem;
+  opacity: 0.6;
+}
+
+.plan-features {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 2.5rem;
+  text-align: left;
+}
+
+.plan-features li {
+  color: #cbd5e1;
+  margin-bottom: 1rem;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.plan-features li::before {
+  content: '✓';
+  color: #10b981;
+  font-weight: 900;
+}
+
+/* Map Styling */
+.map-container {
+  height: 500px;
+  width: 100%;
+  border-radius: 24px;
+  overflow: hidden;
+  border: 2px solid rgba(122, 168, 255, 0.2);
+  margin-bottom: 2rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+}
+
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  background: #0f172a !important;
+}
+
+.custom-marker {
+  background: #7aa8ff;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+}
+
+.nearby-badge {
+  background: linear-gradient(135deg, #10b981, #34d399);
+  color: #fff;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  margin-left: 0.5rem;
+}
+
+.geolocation-banner {
+  background: rgba(122, 168, 255, 0.1);
+  border: 1px solid rgba(122, 168, 255, 0.2);
+  padding: 1rem 2rem;
+  border-radius: 12px;
+  margin-bottom: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  backdrop-filter: blur(10px);
+}
+
 .admin-verify-header {
   text-align: center;
   margin-bottom: 2.5rem;

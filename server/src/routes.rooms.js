@@ -93,6 +93,8 @@ router.post('/', upload.array('photos', 10), async (req, res) => {
     amenities,
     contactEmail,
     contactPhone,
+    latitude,
+    longitude,
   } = req.body || {}
 
   if (!ownerId || !ownerName || !title || !address || !pricePerMonth) {
@@ -113,8 +115,8 @@ router.post('/', upload.array('photos', 10), async (req, res) => {
       `INSERT INTO rooms (
         owner_id, owner_name, owner_id_number, title, description, address, city,
         price_per_month, room_type, bedrooms, bathrooms, area_sqft, available_from,
-        amenities, contact_email, contact_phone, photos
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        amenities, contact_email, contact_phone, photos, latitude, longitude
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         ownerId,
         ownerName.trim(),
@@ -132,7 +134,9 @@ router.post('/', upload.array('photos', 10), async (req, res) => {
         amenities?.trim() || null,
         contactEmail?.trim() || null,
         contactPhone?.trim() || null,
-        photosJson
+        photosJson,
+        latitude ? Number(latitude) : null,
+        longitude ? Number(longitude) : null
       ]
     )
 
@@ -212,6 +216,39 @@ router.get('/my-inquiries/:ownerId', async (req, res) => {
   } catch (error) {
     console.error('Get inquiries error', error)
     return res.status(500).json({ message: 'Failed to fetch inquiries.' })
+  }
+})
+
+// Get nearby rooms (Haversine Formula)
+router.get('/nearby', async (req, res) => {
+  const { lat, lng, radius = 10 } = req.query // radius in km
+
+  if (!lat || !lng) {
+    return res.status(400).json({ message: 'Latitude and Longitude are required.' })
+  }
+
+  try {
+    const [rows] = await db.execute(
+      `SELECT r.*, u.full_name as owner_full_name, u.email as owner_email, u.phone_number as owner_phone,
+       COALESCE(u.is_verified, 0) as owner_is_verified,
+       (6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude)))) AS distance
+       FROM rooms r
+       JOIN users u ON r.owner_id = u.id
+       WHERE r.is_available = TRUE
+       HAVING distance < ?
+       ORDER BY distance ASC`,
+      [lat, lng, lat, radius]
+    )
+
+    const rooms = rows.map(room => ({
+      ...room,
+      photos: typeof room.photos === 'string' ? JSON.parse(room.photos) : (room.photos || [])
+    }))
+
+    return res.json({ rooms })
+  } catch (error) {
+    console.error('Get nearby rooms error', error)
+    return res.status(500).json({ message: 'Failed to fetch nearby rooms.' })
   }
 })
 

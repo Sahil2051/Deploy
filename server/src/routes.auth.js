@@ -52,7 +52,7 @@ router.post('/login', async (req, res) => {
   try {
     const normalized = normalizeCredential(credential)
     const [rows] = await db.execute(
-      'SELECT id, full_name, email, phone_number, password_hash FROM users WHERE email = ? OR phone_number = ? LIMIT 1',
+      'SELECT id, full_name, email, phone_number, password_hash, is_premium, premium_until FROM users WHERE email = ? OR phone_number = ? LIMIT 1',
       [normalized, credential.trim()]
     )
 
@@ -80,6 +80,8 @@ router.post('/login', async (req, res) => {
         email: user.email,
         phoneNumber: user.phone_number,
         isVerified: Boolean(userVerification[0]?.is_verified || 0),
+        isPremium: Boolean(user.is_premium || 0),
+        premiumUntil: user.premium_until,
       },
     })
   } catch (error) {

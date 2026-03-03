@@ -1,4 +1,20 @@
 import { useState, useEffect, type ChangeEvent, type FormEvent } from 'react'
+import {
+  Search, MapPin, Calendar, Users, Star, Shield, Clock, Plus, Trash2, Edit2, LogOut,
+  User as UserIcon, BookOpen, Check, X, Menu, Info, Heart, Share2, ArrowRight,
+  ExternalLink, MessageCircle, Phone, Mail, Award, Zap, Navigation, Globe, Map
+} from 'lucide-react'
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
+import 'leaflet/dist/leaflet.css'
+import L from 'leaflet'
+
+// Fix for default marker icons in Leaflet
+delete (L.Icon.Default.prototype as any)._getIconUrl
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+})
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000/api'
 
@@ -8,6 +24,8 @@ type User = {
   email: string
   phoneNumber: string
   isVerified?: boolean
+  isPremium?: boolean
+  premiumUntil?: string | null
 }
 
 type Room = {
@@ -32,6 +50,8 @@ type Room = {
   contact_phone?: string
   is_available: boolean
   created_at: string
+  latitude?: number | null
+  longitude?: number | null
 }
 
 type Booking = {
@@ -82,6 +102,8 @@ const initialRoomState = {
   amenities: '',
   contactEmail: '',
   contactPhone: '',
+  latitude: '',
+  longitude: '',
 }
 
 const initialBookingState = {
@@ -139,6 +161,7 @@ function App() {
   const [myRooms, setMyRooms] = useState<Room[]>([])
   const [allRooms, setAllRooms] = useState<Room[]>([])
   const [filteredRooms, setFilteredRooms] = useState<Room[]>([])
+  const [roomListTab, setRoomListTab] = useState<'all' | 'nearby' | 'map'>('all')
   const [loadingRooms, setLoadingRooms] = useState(false)
   const [userInquiries, setUserInquiries] = useState<UserInquiry[]>([])
   const [isAdmin, setIsAdmin] = useState(false)
@@ -156,6 +179,76 @@ function App() {
   const [bookingLoading, setBookingLoading] = useState(false)
   const [showLoginPassword, setShowLoginPassword] = useState(false)
   const [showSignupPassword, setShowSignupPassword] = useState(false)
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
+  const [nearbyRooms, setNearbyRooms] = useState<Room[]>([])
+  const [isPremiumLoading, setIsPremiumLoading] = useState(false)
+  const [nearbyRadius, setNearbyRadius] = useState(10) // 10km radius
+
+  // Geolocation tracking
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          })
+        },
+        (error) => {
+          console.error("Geolocation error:", error)
+        }
+      )
+    }
+  }, [])
+
+  // Fetch nearby rooms if user is premium and location is available
+  useEffect(() => {
+    const fetchNearby = async () => {
+      if (user?.isPremium && userLocation) {
+        try {
+          const res = await fetch(`${API_BASE_URL}/rooms/nearby?lat=${userLocation.lat}&lng=${userLocation.lng}&radius=${nearbyRadius}`)
+          const data = await res.json()
+          if (data.rooms) {
+            setNearbyRooms(data.rooms)
+          }
+        } catch (error) {
+          console.error("Fetch nearby rooms error:", error)
+        }
+      }
+    }
+    fetchNearby()
+  }, [user, userLocation, nearbyRadius])
+
+  const handlePurchasePremium = async (planType: 'day' | 'week' | 'month') => {
+    if (!user) {
+      setActiveModal('login')
+      return
+    }
+
+    setIsPremiumLoading(true)
+    try {
+      const res = await fetch(`${API_BASE_URL}/premium/purchase`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, planType })
+      })
+
+      const data = await res.json()
+      if (res.ok) {
+        const updatedUser = { ...user, isPremium: true, premiumUntil: data.premiumUntil }
+        setUser(updatedUser)
+        localStorage.setItem('shelter_user', JSON.stringify(updatedUser))
+        alert(data.message)
+      } else {
+        alert(data.message || 'Purchase failed.')
+      }
+    } catch (error) {
+      console.error("Purchase error:", error)
+      alert("Failed to process purchase.")
+    } finally {
+      setIsPremiumLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (searchQuery.trim() === '') {
@@ -395,6 +488,8 @@ function App() {
       formData.append('amenities', roomData.amenities)
       formData.append('contactEmail', roomData.contactEmail || user.email)
       formData.append('contactPhone', roomData.contactPhone || user.phoneNumber)
+      formData.append('latitude', roomData.latitude)
+      formData.append('longitude', roomData.longitude)
 
       // Append photos
       roomPhotos.forEach((photo) => {
@@ -1059,20 +1154,76 @@ function App() {
 
       {
         currentView === 'premium' && (
-          <div style={{ textAlign: 'center', padding: '4rem 0' }}>
-            <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>👑</div>
-            <h1 style={{
-              fontSize: '3rem',
-              background: 'linear-gradient(135deg, #a287f4, #cf9eff)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              margin: '0 0 1rem'
-            }}>
-              Premium Membership
-            </h1>
-            <p style={{ fontSize: '1.2rem', color: '#94a3b8' }}>
-              Unlock exclusive features and verified badges. Coming soon.
-            </p>
+          <div className="premium-container" style={{ padding: '4rem 0', maxWidth: '1200px', margin: '0 auto' }}>
+            <div style={{ textAlign: 'center', marginBottom: '4rem' }}>
+              <div style={{ fontSize: '4rem', marginBottom: '1rem', filter: 'drop-shadow(0 0 15px rgba(122, 168, 255, 0.4))' }}>👑</div>
+              <h1 className="admin-title" style={{ fontSize: '3.5rem', marginBottom: '1rem' }}>SHELTER Premium</h1>
+              <p style={{ fontSize: '1.2rem', color: '#94a3b8', maxWidth: '600px', margin: '0 auto' }}>
+                Unlock high-tech geolocation features, map views, and verified status to find your perfect home faster.
+              </p>
+            </div>
+
+            <div className="premium-plans-container">
+              {/* Daily Plan */}
+              <div className="premium-plan-card">
+                <div className="plan-name">Scout</div>
+                <div className="plan-price">Rs 99<span>/day</span></div>
+                <ul className="plan-features">
+                  <li>24h Premium Status</li>
+                  <li>Geolocation Search</li>
+                  <li>Interactive Map View</li>
+                  <li>Priority Support</li>
+                </ul>
+                <button
+                  className="primary-cta"
+                  style={{ marginTop: 'auto', width: '100%' }}
+                  onClick={() => handlePurchasePremium('day')}
+                  disabled={isPremiumLoading}
+                >
+                  {isPremiumLoading ? 'Processing...' : 'Get Scout'}
+                </button>
+              </div>
+
+              {/* Weekly Plan */}
+              <div className="premium-plan-card highlighted">
+                <div className="plan-name">Explorer</div>
+                <div className="plan-price">Rs 499<span>/week</span></div>
+                <ul className="plan-features">
+                  <li>7 Days Premium Status</li>
+                  <li>Nearby Room Discovery</li>
+                  <li>Verified Badge</li>
+                  <li>Interactive Map View</li>
+                </ul>
+                <button
+                  className="primary-cta"
+                  style={{ marginTop: 'auto', width: '100%' }}
+                  onClick={() => handlePurchasePremium('week')}
+                  disabled={isPremiumLoading}
+                >
+                  {isPremiumLoading ? 'Processing...' : 'Get Explorer'}
+                </button>
+              </div>
+
+              {/* Monthly Plan */}
+              <div className="premium-plan-card">
+                <div className="plan-name">Resident</div>
+                <div className="plan-price">Rs 1499<span>/month</span></div>
+                <ul className="plan-features">
+                  <li>30 Days Premium Status</li>
+                  <li>Full Map Access</li>
+                  <li>Featured Listing</li>
+                  <li>24/7 Dedicated Support</li>
+                </ul>
+                <button
+                  className="primary-cta"
+                  style={{ marginTop: 'auto', width: '100%' }}
+                  onClick={() => handlePurchasePremium('month')}
+                  disabled={isPremiumLoading}
+                >
+                  {isPremiumLoading ? 'Processing...' : 'Get Resident'}
+                </button>
+              </div>
+            </div>
           </div>
         )
       }
@@ -1386,15 +1537,81 @@ function App() {
                   <p className="eyebrow">Available</p>
                   <h2>Rooms for Rent</h2>
                 </div>
+                {user?.isPremium && (
+                  <div className="admin-tabs" style={{ marginBottom: 0, padding: '0.25rem', borderRadius: '12px' }}>
+                    <button
+                      className={`admin-tab ${roomListTab === 'all' ? 'active' : ''}`}
+                      onClick={() => setRoomListTab('all')}
+                      style={{ padding: '0.5rem 1rem', fontSize: '0.8rem' }}
+                    >
+                      All
+                    </button>
+                    <button
+                      className={`admin-tab ${roomListTab === 'nearby' ? 'active' : ''}`}
+                      onClick={() => setRoomListTab('nearby')}
+                      style={{ padding: '0.5rem 1rem', fontSize: '0.8rem' }}
+                    >
+                      Nearby
+                    </button>
+                    <button
+                      className={`admin-tab ${roomListTab === 'map' ? 'active' : ''}`}
+                      onClick={() => setRoomListTab('map')}
+                      style={{ padding: '0.5rem 1rem', fontSize: '0.8rem' }}
+                    >
+                      Map
+                    </button>
+                  </div>
+                )}
               </div>
 
-              {filteredRooms.length === 0 ? (
+              {!user?.isPremium && roomListTab !== 'all' && (
+                <div className="geolocation-banner">
+                  <p style={{ margin: 0 }}>Discover rooms near you on an interactive map!</p>
+                  <button className="primary-cta compact" onClick={() => setCurrentView('premium')}>Upgrade to Premium</button>
+                </div>
+              )}
+
+              {roomListTab === 'map' && user?.isPremium && (
+                <div className="map-container">
+                  <MapContainer
+                    center={[userLocation?.lat || 27.7172, userLocation?.lng || 85.3240]}
+                    zoom={13}
+                    scrollWheelZoom={false}
+                  >
+                    <TileLayer
+                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    />
+                    {(roomListTab === 'map' ? allRooms : nearbyRooms).map(room => (
+                      room.latitude && room.longitude && (
+                        <Marker key={room.id} position={[room.latitude, room.longitude]}>
+                          <Popup>
+                            <strong>{room.title}</strong><br />
+                            Rs {room.price_per_month}/mo<br />
+                            <button onClick={() => { setSelectedRoom(room); setCurrentView('room-details'); }}>Details</button>
+                          </Popup>
+                        </Marker>
+                      )
+                    ))}
+                    {userLocation && (
+                      <Marker position={[userLocation.lat, userLocation.lng]}>
+                        <Popup>Your Location</Popup>
+                      </Marker>
+                    )}
+                  </MapContainer>
+                </div>
+              )}
+
+              {(roomListTab === 'all' ? filteredRooms : nearbyRooms).length === 0 ? (
                 <p className="empty-state">
-                  {searchQuery ? `No rooms found matching "${searchQuery}"` : "No rooms available at the moment."}
+                  {roomListTab === 'nearby'
+                    ? "No rooms found nearby. Try increasing the search radius or check your geolocation permissions."
+                    : (searchQuery ? `No rooms found matching "${searchQuery}"` : "No rooms available at the moment.")
+                  }
                 </p>
-              ) : (
+              ) : roomListTab !== 'map' && (
                 <div className="featured-grid">
-                  {filteredRooms.map((room) => (
+                  {(roomListTab === 'all' ? filteredRooms : nearbyRooms).map((room) => (
                     <article key={room.id} className="glass-card room-card">
                       <div className="room-image" aria-hidden="true" style={{ position: 'relative' }}>
                         {room.photos && room.photos.length > 0 && (
@@ -1904,6 +2121,34 @@ function App() {
                           <span>City</span>
                           <input name="city" value={roomData.city} onChange={handleRoomChange} />
                         </label>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                          <label>
+                            <span>Latitude</span>
+                            <input name="latitude" value={roomData.latitude} onChange={handleRoomChange} placeholder="e.g. 27.7172" />
+                          </label>
+                          <label>
+                            <span>Longitude</span>
+                            <input name="longitude" value={roomData.longitude} onChange={handleRoomChange} placeholder="e.g. 85.3240" />
+                          </label>
+                        </div>
+                        <button
+                          type="button"
+                          className="ghost-cta mini"
+                          style={{ width: '100%', marginTop: '0.5rem' }}
+                          onClick={() => {
+                            if (navigator.geolocation) {
+                              navigator.geolocation.getCurrentPosition((pos) => {
+                                setRoomData(prev => ({
+                                  ...prev,
+                                  latitude: pos.coords.latitude.toString(),
+                                  longitude: pos.coords.longitude.toString()
+                                }))
+                              })
+                            }
+                          }}
+                        >
+                          📍 Detect My Current Location
+                        </button>
                       </div>
                     )}
 
