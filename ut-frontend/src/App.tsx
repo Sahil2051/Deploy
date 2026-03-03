@@ -1,8 +1,9 @@
-import { useState, useEffect, type ChangeEvent, type FormEvent } from 'react'
+import React, { useState, useEffect, type ChangeEvent, type FormEvent } from 'react'
 import {
   Search, MapPin, Calendar, Users, Star, Shield, Clock, Plus, Trash2, Edit2, LogOut,
   User as UserIcon, BookOpen, Check, X, Menu, Info, Heart, Share2, ArrowRight,
-  ExternalLink, MessageCircle, Phone, Mail, Award, Zap, Navigation, Globe, Map
+  ExternalLink, MessageCircle, Phone, Mail, Award, Zap, Navigation, Globe, Map,
+  Crown, HelpCircle
 } from 'lucide-react'
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -26,6 +27,7 @@ type User = {
   isVerified?: boolean
   isPremium?: boolean
   premiumUntil?: string | null
+  premiumPlan?: string | null
 }
 
 type Room = {
@@ -182,7 +184,7 @@ function App() {
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
   const [nearbyRooms, setNearbyRooms] = useState<Room[]>([])
   const [isPremiumLoading, setIsPremiumLoading] = useState(false)
-  const [nearbyRadius, setNearbyRadius] = useState(10) // 10km radius
+  const [nearbyRadius] = useState(10) // 10km radius
 
   // Geolocation tracking
   useEffect(() => {
@@ -206,8 +208,16 @@ function App() {
     const fetchNearby = async () => {
       if (user?.isPremium && userLocation) {
         try {
-          const res = await fetch(`${API_BASE_URL}/rooms/nearby?lat=${userLocation.lat}&lng=${userLocation.lng}&radius=${nearbyRadius}`)
+          const res = await fetch(`${API_BASE_URL}/rooms/nearby?lat=${userLocation.lat}&lng=${userLocation.lng}&radius=${nearbyRadius}&userId=${user.id}`)
           const data = await res.json()
+          if (res.status === 403) {
+            // Premium expired
+            const updatedUser = { ...user, isPremium: false }
+            setUser(updatedUser)
+            localStorage.setItem('shelter_user', JSON.stringify(updatedUser))
+            alert("Your premium subscription has expired.")
+            return
+          }
           if (data.rooms) {
             setNearbyRooms(data.rooms)
           }
@@ -227,25 +237,48 @@ function App() {
 
     setIsPremiumLoading(true)
     try {
-      const res = await fetch(`${API_BASE_URL}/premium/purchase`, {
+      // 1. Initiate on Backend
+      const res = await fetch(`${API_BASE_URL}/premium/initiate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, planType })
       })
 
-      const data = await res.json()
-      if (res.ok) {
-        const updatedUser = { ...user, isPremium: true, premiumUntil: data.premiumUntil }
-        setUser(updatedUser)
-        localStorage.setItem('shelter_user', JSON.stringify(updatedUser))
-        alert(data.message)
-      } else {
-        alert(data.message || 'Purchase failed.')
+      const params = await res.json()
+      if (!res.ok) throw new Error(params.message || 'Initiation failed')
+
+      // 2. Create hidden form and submit to eSewa
+      const form = document.createElement('form')
+      form.setAttribute('method', 'POST')
+      form.setAttribute('action', 'https://rc-epay.esewa.com.np/api/epay/main/v2/form')
+
+      const fields = {
+        amount: params.amount,
+        tax_amount: params.tax_amount,
+        total_amount: params.total_amount,
+        transaction_uuid: params.transaction_uuid,
+        product_code: params.product_code,
+        product_service_charge: params.psc,
+        product_delivery_charge: params.pdc,
+        success_url: params.success_url,
+        failure_url: params.failure_url,
+        signed_field_names: 'total_amount,transaction_uuid,product_code',
+        signature: params.signature,
       }
+
+      for (const [key, value] of Object.entries(fields)) {
+        const input = document.createElement('input')
+        input.setAttribute('type', 'hidden')
+        input.setAttribute('name', key)
+        input.setAttribute('value', String(value))
+        form.appendChild(input)
+      }
+
+      document.body.appendChild(form)
+      form.submit()
     } catch (error) {
       console.error("Purchase error:", error)
-      alert("Failed to process purchase.")
-    } finally {
+      alert(error instanceof Error ? error.message : "Failed to process purchase.")
       setIsPremiumLoading(false)
     }
   }
@@ -271,6 +304,43 @@ function App() {
       fetchOwnerBookings()
     }
     fetchAllRooms()
+
+    // Handle eSewa Callback
+    const urlParams = new URLSearchParams(window.location.search)
+    const paymentStatus = urlParams.get('payment')
+    const paymentData = urlParams.get('data')
+
+    if (paymentStatus === 'success' && paymentData && user) {
+      const verifyPayment = async () => {
+        setIsPremiumLoading(true)
+        try {
+          const res = await fetch(`${API_BASE_URL}/premium/verify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data: paymentData })
+          })
+          const result = await res.json()
+          if (res.ok) {
+            const updatedUser = { ...user, isPremium: true, premiumUntil: result.premiumUntil }
+            setUser(updatedUser)
+            localStorage.setItem('shelter_user', JSON.stringify(updatedUser))
+            alert(result.message)
+            // Clear URL params
+            window.history.replaceState({}, document.title, "/")
+          } else {
+            alert(result.message || "Verification failed")
+          }
+        } catch (error) {
+          console.error("Verification error:", error)
+        } finally {
+          setIsPremiumLoading(false)
+        }
+      }
+      verifyPayment()
+    } else if (paymentStatus === 'failure') {
+      alert("Payment failed or was cancelled.")
+      window.history.replaceState({}, document.title, "/")
+    }
   }, [user])
 
   const fetchMyRooms = async () => {
@@ -1152,75 +1222,111 @@ function App() {
       {
         currentView === 'premium' && (
           <div className="premium-container" style={{ padding: '4rem 0', maxWidth: '1200px', margin: '0 auto' }}>
-            <div style={{ textAlign: 'center', marginBottom: '4rem' }}>
-              <div style={{ fontSize: '4rem', marginBottom: '1rem', filter: 'drop-shadow(0 0 15px rgba(122, 168, 255, 0.4))' }}>👑</div>
-              <h1 className="admin-title" style={{ fontSize: '3.5rem', marginBottom: '1rem' }}>SHELTER Premium</h1>
-              <p style={{ fontSize: '1.2rem', color: '#94a3b8', maxWidth: '600px', margin: '0 auto' }}>
-                Unlock high-tech geolocation features, map views, and verified status to find your perfect home faster.
-              </p>
-            </div>
+            {user?.isPremium ? (
+              <div className="premium-active-dashboard">
+                <div className="premium-header-content">
+                  <div className="premium-badge-large">👑</div>
+                  <h1 className="admin-title">Hello, Premium Member!</h1>
+                  <p className="premium-subtitle">
+                    Your {user.premiumPlan || 'active'} plan is valid until {user.premiumUntil ? new Date(user.premiumUntil).toLocaleDateString() : 'N/A'}.
+                  </p>
+                </div>
 
-            <div className="premium-plans-container">
-              {/* Daily Plan */}
-              <div className="premium-plan-card">
-                <div className="plan-name">Scout</div>
-                <div className="plan-price">Rs 99<span>/day</span></div>
-                <ul className="plan-features">
-                  <li>24h Premium Status</li>
-                  <li>Geolocation Search</li>
-                  <li>Interactive Map View</li>
-                  <li>Priority Support</li>
-                </ul>
-                <button
-                  className="primary-cta"
-                  style={{ marginTop: 'auto', width: '100%' }}
-                  onClick={() => handlePurchasePremium('day')}
-                  disabled={isPremiumLoading}
-                >
-                  {isPremiumLoading ? 'Processing...' : 'Get Scout'}
-                </button>
-              </div>
+                <div className="premium-features-hub">
+                  <div className="feature-hub-card" onClick={() => { setCurrentView('rooms'); setRoomListTab('map'); }}>
+                    <div className="hub-icon">🗺️</div>
+                    <h4>Interactive Map</h4>
+                    <p>Find rooms visually with real-time mapping technology.</p>
+                    <button className="hub-btn">Explore Map</button>
+                  </div>
+                  <div className="feature-hub-card" onClick={() => { setCurrentView('rooms'); setRoomListTab('nearby'); }}>
+                    <div className="hub-icon">📍</div>
+                    <h4>Nearby Discovery</h4>
+                    <p>Track rooms near your current live location automatically.</p>
+                    <button className="hub-btn">Find Nearby</button>
+                  </div>
+                  <div className="feature-hub-card">
+                    <div className="hub-icon">🛡️</div>
+                    <h4>Premium Support</h4>
+                    <p>You have priority access to our 24/7 dedicated help desk.</p>
+                    <button className="hub-btn ghost">Contact Support</button>
+                  </div>
+                </div>
 
-              {/* Weekly Plan */}
-              <div className="premium-plan-card highlighted">
-                <div className="plan-name">Explorer</div>
-                <div className="plan-price">Rs 499<span>/week</span></div>
-                <ul className="plan-features">
-                  <li>7 Days Premium Status</li>
-                  <li>Nearby Room Discovery</li>
-                  <li>Verified Badge</li>
-                  <li>Interactive Map View</li>
-                </ul>
-                <button
-                  className="primary-cta"
-                  style={{ marginTop: 'auto', width: '100%' }}
-                  onClick={() => handlePurchasePremium('week')}
-                  disabled={isPremiumLoading}
-                >
-                  {isPremiumLoading ? 'Processing...' : 'Get Explorer'}
-                </button>
+                <div className="premium-status-banner">
+                  <p>Your subscription is active. Thank you for supporting <strong>SHELTER</strong>!</p>
+                </div>
               </div>
+            ) : (
+              <div className="premium-purchase-view">
+                <div style={{ textAlign: 'center', marginBottom: '4rem' }}>
+                  <div style={{ fontSize: '4rem', marginBottom: '1rem', filter: 'drop-shadow(0 0 15px rgba(122, 168, 255, 0.4))' }}>👑</div>
+                  <h1 className="admin-title" style={{ fontSize: '3.5rem', marginBottom: '1rem' }}>SHELTER Premium</h1>
+                  <p style={{ fontSize: '1.2rem', color: '#94a3b8', maxWidth: '600px', margin: '0 auto' }}>
+                    Unlock high-tech geolocation features, map views, and verified status to find your perfect home faster.
+                  </p>
+                </div>
 
-              {/* Monthly Plan */}
-              <div className="premium-plan-card">
-                <div className="plan-name">Resident</div>
-                <div className="plan-price">Rs 1499<span>/month</span></div>
-                <ul className="plan-features">
-                  <li>30 Days Premium Status</li>
-                  <li>Full Map Access</li>
-                  <li>Featured Listing</li>
-                  <li>24/7 Dedicated Support</li>
-                </ul>
-                <button
-                  className="primary-cta"
-                  style={{ marginTop: 'auto', width: '100%' }}
-                  onClick={() => handlePurchasePremium('month')}
-                  disabled={isPremiumLoading}
-                >
-                  {isPremiumLoading ? 'Processing...' : 'Get Resident'}
-                </button>
+                <div className="premium-plans-container">
+                  <div className="premium-plan-card">
+                    <div className="plan-name">Scout</div>
+                    <div className="plan-price">Rs 99<span>/day</span></div>
+                    <ul className="plan-features">
+                      <li>24h Premium Status</li>
+                      <li>Geolocation Search</li>
+                      <li>Interactive Map View</li>
+                      <li>Priority Support</li>
+                    </ul>
+                    <button
+                      className="primary-cta"
+                      style={{ marginTop: 'auto', width: '100%' }}
+                      onClick={() => handlePurchasePremium('day')}
+                      disabled={isPremiumLoading}
+                    >
+                      {isPremiumLoading ? 'Processing...' : 'Get Scout'}
+                    </button>
+                  </div>
+
+                  <div className="premium-plan-card highlighted">
+                    <div className="plan-name">Explorer</div>
+                    <div className="plan-price">Rs 499<span>/week</span></div>
+                    <ul className="plan-features">
+                      <li>7 Days Premium Status</li>
+                      <li>Nearby Room Discovery</li>
+                      <li>Verified Badge</li>
+                      <li>Interactive Map View</li>
+                    </ul>
+                    <button
+                      className="primary-cta"
+                      style={{ marginTop: 'auto', width: '100%' }}
+                      onClick={() => handlePurchasePremium('week')}
+                      disabled={isPremiumLoading}
+                    >
+                      {isPremiumLoading ? 'Processing...' : 'Get Explorer'}
+                    </button>
+                  </div>
+
+                  <div className="premium-plan-card">
+                    <div className="plan-name">Resident</div>
+                    <div className="plan-price">Rs 1499<span>/month</span></div>
+                    <ul className="plan-features">
+                      <li>30 Days Premium Status</li>
+                      <li>Full Map Access</li>
+                      <li>Featured Listing</li>
+                      <li>24/7 Dedicated Support</li>
+                    </ul>
+                    <button
+                      className="primary-cta"
+                      style={{ marginTop: 'auto', width: '100%' }}
+                      onClick={() => handlePurchasePremium('month')}
+                      disabled={isPremiumLoading}
+                    >
+                      {isPremiumLoading ? 'Processing...' : 'Get Resident'}
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )
       }
@@ -1534,31 +1640,42 @@ function App() {
                   <p className="eyebrow">Available</p>
                   <h2>Rooms for Rent</h2>
                 </div>
-                {user?.isPremium && (
-                  <div className="admin-tabs" style={{ marginBottom: 0, padding: '0.25rem', borderRadius: '12px' }}>
-                    <button
-                      className={`admin-tab ${roomListTab === 'all' ? 'active' : ''}`}
-                      onClick={() => setRoomListTab('all')}
-                      style={{ padding: '0.5rem 1rem', fontSize: '0.8rem' }}
-                    >
-                      All
-                    </button>
-                    <button
-                      className={`admin-tab ${roomListTab === 'nearby' ? 'active' : ''}`}
-                      onClick={() => setRoomListTab('nearby')}
-                      style={{ padding: '0.5rem 1rem', fontSize: '0.8rem' }}
-                    >
-                      Nearby
-                    </button>
-                    <button
-                      className={`admin-tab ${roomListTab === 'map' ? 'active' : ''}`}
-                      onClick={() => setRoomListTab('map')}
-                      style={{ padding: '0.5rem 1rem', fontSize: '0.8rem' }}
-                    >
-                      Map
-                    </button>
-                  </div>
-                )}
+                <div className="admin-tabs" style={{ marginBottom: 0, padding: '0.25rem', borderRadius: '12px' }}>
+                  <button
+                    className={`admin-tab ${roomListTab === 'all' ? 'active' : ''}`}
+                    onClick={() => setRoomListTab('all')}
+                    style={{ padding: '0.5rem 1rem', fontSize: '0.8rem' }}
+                  >
+                    All
+                  </button>
+                  <button
+                    className={`admin-tab ${roomListTab === 'nearby' ? 'active' : ''} ${!user?.isPremium ? 'locked-tab' : ''}`}
+                    onClick={() => {
+                      if (user?.isPremium) {
+                        setRoomListTab('nearby');
+                      } else {
+                        setCurrentView('premium');
+                        // Optional: Scroll to top or show message
+                      }
+                    }}
+                    style={{ padding: '0.5rem 1rem', fontSize: '0.8rem', position: 'relative' }}
+                  >
+                    Nearby {!user?.isPremium && '🔒'}
+                  </button>
+                  <button
+                    className={`admin-tab ${roomListTab === 'map' ? 'active' : ''} ${!user?.isPremium ? 'locked-tab' : ''}`}
+                    onClick={() => {
+                      if (user?.isPremium) {
+                        setRoomListTab('map');
+                      } else {
+                        setCurrentView('premium');
+                      }
+                    }}
+                    style={{ padding: '0.5rem 1rem', fontSize: '0.8rem', position: 'relative' }}
+                  >
+                    Map {!user?.isPremium && '🔒'}
+                  </button>
+                </div>
               </div>
 
               {!user?.isPremium && roomListTab !== 'all' && (

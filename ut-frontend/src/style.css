@@ -1548,20 +1548,135 @@ blockquote footer {
   backdrop-filter: blur(10px);
 }
 
+.admin-tab.locked-tab {
+  opacity: 0.7;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border-style: dashed !important;
+}
+
+.admin-tab.locked-tab:hover {
+  background: rgba(122, 168, 255, 0.1) !important;
+  color: #7aa8ff;
+}
+
 .admin-verify-header {
   text-align: center;
   margin-bottom: 2.5rem;
   position: relative;
 }
 
-.security-badge {
+.premium-active-dashboard {
+  text-align: center;
+  animation: fadeIn 1s ease-out;
+}
+
+.premium-header-content {
+  margin-bottom: 3rem;
+}
+
+.premium-badge-large {
+  font-size: 5rem;
+  margin-bottom: 1rem;
+  filter: drop-shadow(0 0 20px rgba(122, 168, 255, 0.6));
+  animation: float 3s ease-in-out infinite;
+}
+
+.premium-subtitle {
+  color: #94a3b8;
+  font-size: 1.1rem;
+}
+
+.premium-features-hub {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 2rem;
+  margin-bottom: 3rem;
+}
+
+.feature-hub-card {
+  background: rgba(122, 168, 255, 0.1);
+  border: 1px solid rgba(122, 168, 255, 0.2);
+  border-radius: 24px;
+  padding: 2.5rem;
+  cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(10px);
   position: relative;
-  width: 100px;
-  height: 100px;
-  margin: 0 auto 1.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  overflow: hidden;
+}
+
+.feature-hub-card:hover {
+  transform: translateY(-10px);
+  background: rgba(122, 168, 255, 0.15);
+  border-color: rgba(122, 168, 255, 0.4);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+}
+
+.hub-icon {
+  font-size: 3rem;
+  margin-bottom: 1.5rem;
+}
+
+.feature-hub-card h4 {
+  font-size: 1.4rem;
+  margin-bottom: 1rem;
+  color: #fff;
+}
+
+.feature-hub-card p {
+  color: #94a3b8;
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+}
+
+.hub-btn {
+  background: #7aa8ff;
+  color: #0f172a;
+  border: none;
+  padding: 0.8rem 1.5rem;
+  border-radius: 12px;
+  font-weight: 700;
+  width: 100%;
+  transition: all 0.3s ease;
+}
+
+.hub-btn.ghost {
+  background: transparent;
+  border: 1px solid rgba(122, 168, 255, 0.4);
+  color: #7aa8ff;
+}
+
+.premium-status-banner {
+  background: linear-gradient(90deg, rgba(122, 168, 255, 0.1), rgba(122, 168, 255, 0.05));
+  padding: 1.5rem;
+  border-radius: 16px;
+  border-left: 4px solid #7aa8ff;
+  display: inline-block;
+}
+
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .shield-icon {

@@ -219,15 +219,35 @@ router.get('/my-inquiries/:ownerId', async (req, res) => {
   }
 })
 
-// Get nearby rooms (Haversine Formula)
+// Get nearby rooms (Haversine Formula) - Premium Only
 router.get('/nearby', async (req, res) => {
-  const { lat, lng, radius = 10 } = req.query // radius in km
+  const { lat, lng, radius = 10, userId } = req.query // radius in km
 
   if (!lat || !lng) {
     return res.status(400).json({ message: 'Latitude and Longitude are required.' })
   }
 
+  if (!userId) {
+    return res.status(401).json({ message: 'User ID required to verify premium status.' })
+  }
+
   try {
+    // 1. Verify Premium Status in DB
+    const [userRows] = await db.execute('SELECT is_premium, premium_until FROM users WHERE id = ?', [userId])
+    if (userRows.length === 0) return res.status(404).json({ message: 'User not found.' })
+
+    const user = userRows[0]
+    if (!user.is_premium) {
+      return res.status(403).json({ message: 'Premium subscription required for this feature.' })
+    }
+
+    // Check expiry
+    if (user.premium_until && new Date(user.premium_until) < new Date()) {
+      await db.execute('UPDATE users SET is_premium = 0 WHERE id = ?', [userId])
+      return res.status(403).json({ message: 'Premium subscription has expired.' })
+    }
+
+    // 2. Fetch Nearby Rooms
     const [rows] = await db.execute(
       `SELECT r.*, u.full_name as owner_full_name, u.email as owner_email, u.phone_number as owner_phone,
        COALESCE(u.is_verified, 0) as owner_is_verified,

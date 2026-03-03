@@ -52,7 +52,7 @@ router.post('/login', async (req, res) => {
   try {
     const normalized = normalizeCredential(credential)
     const [rows] = await db.execute(
-      'SELECT id, full_name, email, phone_number, password_hash, is_premium, premium_until FROM users WHERE email = ? OR phone_number = ? LIMIT 1',
+      'SELECT id, full_name, email, phone_number, password_hash, is_premium, premium_until, premium_plan FROM users WHERE email = ? OR phone_number = ? LIMIT 1',
       [normalized, credential.trim()]
     )
 
@@ -65,6 +65,19 @@ router.post('/login', async (req, res) => {
 
     if (!passwordMatch) {
       return res.status(401).json({ message: 'Invalid credentials.' })
+    }
+
+    // Check Premium Expiry
+    let isPremium = Boolean(user.is_premium || 0)
+    let premiumUntil = user.premium_until
+
+    if (isPremium && premiumUntil) {
+      const expiryDate = new Date(premiumUntil)
+      if (expiryDate < new Date()) {
+        isPremium = false
+        // Update DB
+        await db.execute('UPDATE users SET is_premium = 0 WHERE id = ?', [user.id])
+      }
     }
 
     const [userVerification] = await db.execute(
@@ -80,8 +93,9 @@ router.post('/login', async (req, res) => {
         email: user.email,
         phoneNumber: user.phone_number,
         isVerified: Boolean(userVerification[0]?.is_verified || 0),
-        isPremium: Boolean(user.is_premium || 0),
-        premiumUntil: user.premium_until,
+        isPremium: isPremium,
+        premiumUntil: premiumUntil,
+        premiumPlan: user.premium_plan,
       },
     })
   } catch (error) {
@@ -118,7 +132,13 @@ router.put('/profile', async (req, res) => {
 
     return res.json({
       message: 'Profile updated successfully.',
-      user: { id, fullName, email, phoneNumber }
+      user: {
+        id,
+        fullName,
+        email,
+        phoneNumber,
+        // Carry over these from session if needed, but usually frontend handles partial updates
+      }
     })
   } catch (error) {
     console.error('Update profile error', error)
