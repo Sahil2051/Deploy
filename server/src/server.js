@@ -4,6 +4,7 @@ const cors = require('cors')
 const authRoutes = require('./routes.auth')
 const roomsRoutes = require('./routes.rooms')
 const adminRoutes = require('./routes.admin')
+const bookingsRoutes = require('./routes.bookings')
 
 const path = require('path')
 
@@ -20,6 +21,7 @@ app.get('/health', (_req, res) => {
 app.use('/api/auth', authRoutes)
 app.use('/api/rooms', roomsRoutes)
 app.use('/api/admin', adminRoutes)
+app.use('/api/bookings', bookingsRoutes)
 
 const port = Number(process.env.APP_PORT ?? 5000)
 const host = process.env.APP_HOST ?? '0.0.0.0'

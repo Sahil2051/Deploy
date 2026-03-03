@@ -12,7 +12,7 @@ router.get('/users', async (_req, res) => {
        FROM users
        ORDER BY created_at DESC`
     )
-    
+
     const users = rows.map(user => ({
       id: user.id,
       fullName: user.full_name,
@@ -108,21 +108,43 @@ router.patch('/users/:userId/unverify', async (req, res) => {
   }
 })
 
-// Delete a room (admin only - no owner check)
-router.delete('/rooms/:roomId', async (req, res) => {
-  const { roomId } = req.params
+// Get all bookings (admin only)
+router.get('/bookings', async (_req, res) => {
+  try {
+    const [rows] = await db.execute(`
+      SELECT b.*, r.title as room_title, r.address as room_address, u.full_name as user_name
+      FROM bookings b
+      JOIN rooms r ON b.room_id = r.id
+      JOIN users u ON b.user_id = u.id
+      ORDER BY b.created_at DESC
+    `)
+    return res.json({ bookings: rows })
+  } catch (error) {
+    console.error('Get admin bookings error', error)
+    return res.status(500).json({ message: 'Failed to fetch bookings.' })
+  }
+})
+
+// Update booking status from admin
+router.patch('/bookings/:bookingId/status', async (req, res) => {
+  const { status } = req.body
+  const { bookingId } = req.params
+
+  if (!['approved', 'rejected', 'cancelled'].includes(status)) {
+    return res.status(400).json({ message: 'Invalid status.' })
+  }
 
   try {
-    const [result] = await db.execute('DELETE FROM rooms WHERE id = ?', [roomId])
+    const [result] = await db.execute('UPDATE bookings SET status = ? WHERE id = ?', [status, bookingId])
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ message: 'Room not found.' })
+      return res.status(404).json({ message: 'Booking not found.' })
     }
 
-    return res.json({ message: 'Room deleted successfully.' })
+    return res.json({ message: `Booking ${status} successfully.` })
   } catch (error) {
-    console.error('Delete room error', error)
-    return res.status(500).json({ message: 'Failed to delete room.' })
+    console.error('Update admin booking status error', error)
+    return res.status(500).json({ message: 'Failed to update booking status.' })
   }
 })
 

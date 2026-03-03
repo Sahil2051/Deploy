@@ -34,6 +34,25 @@ type Room = {
   created_at: string
 }
 
+type Booking = {
+  id: number
+  user_id: number
+  room_id: number
+  room_title: string
+  room_address: string
+  room_city: string
+  check_in_date: string
+  check_out_date: string
+  guests_count: number
+  total_price: number
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled'
+  special_requests?: string
+  created_at: string
+  user_name?: string
+  user_email?: string
+  user_phone?: string
+}
+
 const initialSignupState = {
   fullName: '',
   age: '',
@@ -63,6 +82,13 @@ const initialRoomState = {
   amenities: '',
   contactEmail: '',
   contactPhone: '',
+}
+
+const initialBookingState = {
+  checkInDate: '',
+  checkOutDate: '',
+  guestsCount: '1',
+  specialRequests: '',
 }
 
 interface UserInquiry {
@@ -119,8 +145,17 @@ function App() {
   const [adminMasterPassword, setAdminMasterPassword] = useState('')
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([])
   const [adminRooms, setAdminRooms] = useState<Room[]>([])
+  const [adminBookings, setAdminBookings] = useState<Booking[]>([])
   const [adminLoading, setAdminLoading] = useState(false)
-  const [adminActiveTab, setAdminActiveTab] = useState<'users' | 'rooms'>('users')
+  const [adminActiveTab, setAdminActiveTab] = useState<'users' | 'rooms' | 'bookings'>('users')
+  const [bookingData, setBookingData] = useState(initialBookingState)
+  const [myBookings, setMyBookings] = useState<Booking[]>([])
+  const [ownerBookings, setOwnerBookings] = useState<Booking[]>([])
+  const [accountTab, setAccountTab] = useState<'profile' | 'inquiries' | 'bookings' | 'incoming'>('profile')
+  const [bookingMessage, setBookingMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [bookingLoading, setBookingLoading] = useState(false)
+  const [showLoginPassword, setShowLoginPassword] = useState(false)
+  const [showSignupPassword, setShowSignupPassword] = useState(false)
 
   useEffect(() => {
     if (searchQuery.trim() === '') {
@@ -139,6 +174,8 @@ function App() {
   useEffect(() => {
     if (user) {
       fetchMyRooms()
+      fetchMyBookings()
+      fetchOwnerBookings()
     }
     fetchAllRooms()
   }, [user])
@@ -156,6 +193,38 @@ function App() {
       console.error('Failed to fetch my rooms', error)
     } finally {
       setLoadingRooms(false)
+    }
+  }
+
+  const fetchMyBookings = async () => {
+    if (!user) return
+    setBookingLoading(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/bookings/user/${user.id}`)
+      const payload = await response.json()
+      if (response.ok) {
+        setMyBookings(payload.bookings || [])
+      }
+    } catch (error) {
+      console.error('Failed to fetch my bookings', error)
+    } finally {
+      setBookingLoading(false)
+    }
+  }
+
+  const fetchOwnerBookings = async () => {
+    if (!user) return
+    setBookingLoading(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/bookings/owner/${user.id}`)
+      const payload = await response.json()
+      if (response.ok) {
+        setOwnerBookings(payload.bookings || [])
+      }
+    } catch (error) {
+      console.error('Failed to fetch incoming bookings', error)
+    } finally {
+      setBookingLoading(false)
     }
   }
 
@@ -398,6 +467,7 @@ function App() {
       setAdminMasterPassword('')
       fetchAdminUsers()
       fetchAdminRooms()
+      fetchAdminBookings()
     } else {
       alert('Invalid master password')
     }
@@ -473,6 +543,57 @@ function App() {
     }
   }
 
+  const handleBookingSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!user) {
+      alert('Please login to book a room.')
+      openModal('login')
+      return
+    }
+    if (!selectedRoom) return
+
+    setBookingLoading(true)
+    setBookingMessage(null)
+
+    const payload = {
+      userId: user.id,
+      roomId: selectedRoom.id,
+      checkInDate: bookingData.checkInDate,
+      checkOutDate: bookingData.checkOutDate,
+      guestsCount: Number(bookingData.guestsCount),
+      totalPrice: Number(selectedRoom.price_per_month) * 1, // Simplified: 1 month for now
+      specialRequests: bookingData.specialRequests
+    }
+
+    try {
+      const resp = await fetch(`${API_BASE_URL}/bookings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      const data = await resp.json()
+      if (resp.ok) {
+        setBookingMessage({ type: 'success', text: data.message })
+        setTimeout(() => {
+          setBookingMessage(null)
+          setBookingData(initialBookingState)
+        }, 3000)
+        fetchMyBookings()
+      } else {
+        setBookingMessage({ type: 'error', text: data.message || 'Booking failed' })
+      }
+    } catch (err) {
+      setBookingMessage({ type: 'error', text: 'Network error' })
+    } finally {
+      setBookingLoading(false)
+    }
+  }
+
+  const handleBookingChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target
+    setBookingData(prev => ({ ...prev, [name]: value }))
+  }
+
   const handleAdminLogout = () => {
     setIsAdmin(false)
     localStorage.removeItem('shelter_admin')
@@ -507,6 +628,40 @@ function App() {
       console.error('Failed to fetch admin rooms', error)
     } finally {
       setAdminLoading(false)
+    }
+  }
+
+  const fetchAdminBookings = async () => {
+    setAdminLoading(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/bookings`)
+      const payload = await response.json()
+      if (response.ok) {
+        setAdminBookings(payload.bookings || [])
+      }
+    } catch (error) {
+      console.error('Failed to fetch admin bookings', error)
+    } finally {
+      setAdminLoading(false)
+    }
+  }
+
+  const handleUpdateOwnerBookingStatus = async (bookingId: number, status: string) => {
+    if (!user) return
+    try {
+      const response = await fetch(`${API_BASE_URL}/bookings/${bookingId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, userId: user.id })
+      })
+      if (response.ok) {
+        fetchOwnerBookings()
+      } else {
+        const data = await response.json()
+        alert(data.message || 'Failed to update booking status')
+      }
+    } catch (error) {
+      console.error('Update room booking status error', error)
     }
   }
 
@@ -574,6 +729,7 @@ function App() {
       setIsAdmin(true)
       fetchAdminUsers()
       fetchAdminRooms()
+      fetchAdminBookings()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -584,6 +740,22 @@ function App() {
 
   return (
     <div className="shelter-shell">
+      <div className="galaxy-comet" style={{ left: '10%', animationDelay: '2s' }} />
+      <div className="galaxy-comet" style={{ left: '40%', animationDelay: '8s' }} />
+      <div className="galaxy-comet" style={{ left: '70%', animationDelay: '15s' }} />
+      <div className="star-layer" />
+      <div className="star-shimmer" />
+      <div className="shooting-star" style={{ animationDelay: '0s' }} />
+      <div className="shooting-star" style={{ animationDelay: '4s', left: '30%' }} />
+      <div className="shooting-star" style={{ animationDelay: '12s', left: '60%' }} />
+      <div className="glow-star" />
+      <div className="glow-star" />
+      <div className="glow-star" />
+      <div className="glow-star" />
+      <div className="glow-star" />
+      <div className="glow-star" />
+      <div className="glow-star" />
+      <div className="glow-star" />
       <div className="hero-glow" aria-hidden="true" />
       <div className="hero-glow secondary" aria-hidden="true" />
 
@@ -625,7 +797,7 @@ function App() {
           <div className="docs-header">
             <div className="hero-pill">Project Documentation</div>
             <h1>How Shelter Works</h1>
-            <p style={{ maxWidth: '600px', margin: '0 auto', color: '#606889' }}>
+            <p style={{ maxWidth: '600px', margin: '0 auto', color: '#94a3b8' }}>
               A comprehensive guide for guests, users, and administrators.
             </p>
           </div>
@@ -677,7 +849,7 @@ function App() {
 
           <div className="room-details-header">
             <h1 style={{ marginBottom: '0.5rem', fontSize: '2.5rem' }}>{selectedRoom.title}</h1>
-            <p className="room-address" style={{ fontSize: '1.2rem', color: '#606889' }}>📍 {selectedRoom.address}, {selectedRoom.city}</p>
+            <p className="room-address" style={{ fontSize: '1.2rem', color: '#94a3b8' }}>📍 {selectedRoom.address}, {selectedRoom.city}</p>
           </div>
 
           <div className="room-gallery" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', margin: '2rem 0' }}>
@@ -692,8 +864,8 @@ function App() {
                 />
               ))
             ) : (
-              <div style={{ height: '300px', background: '#eef1fb', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <p>No photos available</p>
+              <div style={{ height: '300px', background: 'rgba(255,255,255,0.05)', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px dashed rgba(255,255,255,0.2)' }}>
+                <p style={{ color: '#94a3b8' }}>No photos available</p>
               </div>
             )}
           </div>
@@ -701,7 +873,7 @@ function App() {
           <div className="room-info-grid" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem' }}>
             <div className="main-info">
               <h3>Description</h3>
-              <p style={{ lineHeight: '1.6', color: '#404965', marginBottom: '2rem' }}>
+              <p style={{ lineHeight: '1.6', color: '#cbd5e1', marginBottom: '2rem' }}>
                 {selectedRoom.description || 'No description provided.'}
               </p>
 
@@ -720,11 +892,11 @@ function App() {
             <div className="sidebar-info glass-card" style={{ height: 'fit-content', padding: '1.5rem', background: 'rgba(255,255,255,0.5)' }}>
               <div style={{ marginBottom: '1.5rem' }}>
                 <span style={{ fontSize: '2rem', fontWeight: 'bold', color: '#7aa8ff' }}>Rs {selectedRoom.price_per_month}</span>
-                <span style={{ color: '#606889' }}> / month</span>
+                <span style={{ color: '#94a3b8' }}> / month</span>
               </div>
 
-              <div className="owner-card" style={{ borderTop: '1px solid #eee', paddingTop: '1.5rem' }}>
-                <p style={{ fontSize: '0.9rem', color: '#9098b7', marginBottom: '0.5rem' }}>POSTED BY</p>
+              <div className="owner-card" style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1.5rem' }}>
+                <p style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '0.5rem' }}>POSTED BY</p>
                 <p style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '0.5rem' }}>
                   {selectedRoom.owner_name}
                   {selectedRoom.owner_is_verified && <span className="verified-tick-icon">✓</span>}
@@ -742,13 +914,79 @@ function App() {
                 )}
 
                 <div className="inquiry-form-card">
-                  <h4 style={{ marginBottom: '1rem', color: '#1a1f36' }}>Send Inquiry</h4>
+                  <h4 style={{ marginBottom: '1rem', color: '#f8fafc' }}>Send Inquiry</h4>
                   <form onSubmit={handleSendInquiry} className="auth-form">
-                    <input type="text" name="senderName" placeholder="Your Name" required className="auth-input" />
-                    <input type="email" name="senderEmail" placeholder="Your Email" required className="auth-input" />
-                    <input type="tel" name="senderPhone" placeholder="Your Phone (Optional)" className="auth-input" />
-                    <textarea name="message" placeholder="I'm interested in this room..." required className="auth-input" style={{ minHeight: '80px', padding: '0.8rem' }} />
+                    <input type="text" name="senderName" placeholder="Your Name" required className="auth-input" style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#f8fafc' }} />
+                    <input type="email" name="senderEmail" placeholder="Your Email" required className="auth-input" style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#f8fafc' }} />
+                    <input type="tel" name="senderPhone" placeholder="Your Phone (Optional)" className="auth-input" style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#f8fafc' }} />
+                    <textarea name="message" placeholder="I'm interested in this room..." required className="auth-input" style={{ minHeight: '80px', padding: '0.8rem', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#f8fafc' }} />
                     <button type="submit" className="primary-cta compact" style={{ width: '100%' }}>Send Message</button>
+                  </form>
+                </div>
+
+                <div className="booking-form-card" style={{ marginTop: '2rem', borderTop: '1px solid #eee', paddingTop: '1.5rem' }}>
+                  <h4 style={{ marginBottom: '1rem', color: '#f8fafc' }}>Book this Room</h4>
+                  <form onSubmit={handleBookingSubmit} className="auth-form">
+                    <label style={{ color: '#94a3b8' }}>
+                      <span>Check-in Date</span>
+                      <input
+                        type="date"
+                        name="checkInDate"
+                        value={bookingData.checkInDate}
+                        onChange={handleBookingChange}
+                        required
+                        className="auth-input"
+                        style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#f8fafc' }}
+                      />
+                    </label>
+                    <label style={{ color: '#94a3b8' }}>
+                      <span>Check-out Date</span>
+                      <input
+                        type="date"
+                        name="checkOutDate"
+                        value={bookingData.checkOutDate}
+                        onChange={handleBookingChange}
+                        required
+                        className="auth-input"
+                        style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#f8fafc' }}
+                      />
+                    </label>
+                    <label style={{ color: '#94a3b8' }}>
+                      <span>Guests</span>
+                      <input
+                        type="number"
+                        name="guestsCount"
+                        min="1"
+                        value={bookingData.guestsCount}
+                        onChange={handleBookingChange}
+                        required
+                        className="auth-input"
+                        style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#f8fafc' }}
+                      />
+                    </label>
+                    <textarea
+                      name="specialRequests"
+                      placeholder="Special requests (optional)..."
+                      value={bookingData.specialRequests}
+                      onChange={handleBookingChange}
+                      className="auth-input"
+                      style={{ minHeight: '60px', padding: '0.8rem', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#f8fafc' }}
+                    />
+
+                    {bookingMessage && (
+                      <div className={`form-feedback-premium ${bookingMessage.type}`}>
+                        {bookingMessage.type === 'success' ? '✅' : '❌'} {bookingMessage.text}
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      className="primary-cta"
+                      style={{ width: '100%' }}
+                      disabled={bookingLoading}
+                    >
+                      {bookingLoading ? 'Processing...' : `Book for Rs ${selectedRoom.price_per_month}`}
+                    </button>
                   </form>
                 </div>
               </div>
@@ -832,7 +1070,7 @@ function App() {
             }}>
               Premium Membership
             </h1>
-            <p style={{ fontSize: '1.2rem', color: '#606889' }}>
+            <p style={{ fontSize: '1.2rem', color: '#94a3b8' }}>
               Unlock exclusive features and verified badges. Coming soon.
             </p>
           </div>
@@ -860,7 +1098,7 @@ function App() {
                       fetchAdminUsers()
                     }}
                   >
-                    👥 Manage Users ({adminUsers.length})
+                    👥 Users ({adminUsers.length})
                   </button>
                   <button
                     className={`admin-tab ${adminActiveTab === 'rooms' ? 'active' : ''}`}
@@ -869,7 +1107,16 @@ function App() {
                       fetchAdminRooms()
                     }}
                   >
-                    🏠 Manage Rooms ({adminRooms.length})
+                    🏠 Rooms ({adminRooms.length})
+                  </button>
+                  <button
+                    className={`admin-tab ${adminActiveTab === 'bookings' ? 'active' : ''}`}
+                    onClick={() => {
+                      setAdminActiveTab('bookings')
+                      fetchAdminBookings()
+                    }}
+                  >
+                    🗂️ Booking Logs ({adminBookings.length})
                   </button>
                 </div>
 
@@ -1008,6 +1255,52 @@ function App() {
                             ))}
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {adminActiveTab === 'bookings' && (
+                      <div className="admin-section">
+                        <h3>Booking Logs (Read-only)</h3>
+                        <div className="admin-table-container">
+                          <table className="admin-table">
+                            <thead>
+                              <tr>
+                                <th>ID</th>
+                                <th>Room</th>
+                                <th>User</th>
+                                <th>Dates</th>
+                                <th>Status</th>
+                                <th>Last Updated</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {adminBookings.length === 0 ? (
+                                <tr>
+                                  <td colSpan={6} style={{ textAlign: 'center', padding: '2rem' }}>
+                                    No logs found
+                                  </td>
+                                </tr>
+                              ) : (
+                                adminBookings.map((b) => (
+                                  <tr key={b.id}>
+                                    <td>{b.id}</td>
+                                    <td>{b.room_title}</td>
+                                    <td>{b.user_name}</td>
+                                    <td>
+                                      {new Date(b.check_in_date).toLocaleDateString()} - {new Date(b.check_out_date).toLocaleDateString()}
+                                    </td>
+                                    <td>
+                                      <span className={`status-badge status-${b.status}`}>
+                                        {b.status}
+                                      </span>
+                                    </td>
+                                    <td>{new Date(b.created_at).toLocaleString()}</td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1196,13 +1489,24 @@ function App() {
                     </label>
                     <label>
                       <span>Password</span>
-                      <input
-                        type="password"
-                        name="password"
-                        value={signupData.password}
-                        onChange={handleSignupChange}
-                        required
-                      />
+                      <div className="password-input-container">
+                        <input
+                          type={showSignupPassword ? "text" : "password"}
+                          name="password"
+                          value={signupData.password}
+                          onChange={handleSignupChange}
+                          required
+                          style={{ width: '100%' }}
+                        />
+                        <button
+                          type="button"
+                          className="password-toggle-btn"
+                          onClick={() => setShowSignupPassword(!showSignupPassword)}
+                          aria-label={showSignupPassword ? "Hide password" : "Show password"}
+                        >
+                          {showSignupPassword ? "👁️" : "👁️‍🗨️"}
+                        </button>
+                      </div>
                     </label>
 
                     <button className="primary-cta" type="submit" disabled={signupLoading}>
@@ -1228,7 +1532,24 @@ function App() {
                     </label>
                     <label>
                       <span>Password</span>
-                      <input type="password" name="password" value={loginData.password} onChange={handleLoginChange} required />
+                      <div className="password-input-container">
+                        <input
+                          type={showLoginPassword ? "text" : "password"}
+                          name="password"
+                          value={loginData.password}
+                          onChange={handleLoginChange}
+                          required
+                          style={{ width: '100%' }}
+                        />
+                        <button
+                          type="button"
+                          className="password-toggle-btn"
+                          onClick={() => setShowLoginPassword(!showLoginPassword)}
+                          aria-label={showLoginPassword ? "Hide password" : "Show password"}
+                        >
+                          {showLoginPassword ? "👁️" : "👁️‍🗨️"}
+                        </button>
+                      </div>
                     </label>
 
                     <button className="primary-cta" type="submit" disabled={loginLoading}>
@@ -1301,52 +1622,248 @@ function App() {
                   </div>
                 </>
               ) : activeModal === 'account' && user ? (
-                <div className="account-modal-layout">
-                  <section>
-                    <h3 className="account-section-title">👤 Account Settings</h3>
-                    <form onSubmit={handleUpdateProfile} className="auth-form" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                      <div className="form-group">
-                        <label className="auth-label">Full Name</label>
-                        <input name="fullName" defaultValue={user.fullName} required className="auth-input" />
+                <div className="pro-account-modal">
+                  <aside className="pro-account-sidebar">
+                    <div className="pro-user-overview">
+                      <div className="pro-avatar">
+                        {user.fullName.charAt(0)}
                       </div>
-                      <div className="form-group">
-                        <label className="auth-label">Email Address</label>
-                        <input name="email" type="email" defaultValue={user.email} required className="auth-input" />
-                      </div>
-                      <div className="form-group">
-                        <label className="auth-label">Phone Number</label>
-                        <input name="phoneNumber" type="tel" defaultValue={user.phoneNumber} required className="auth-input" />
-                      </div>
-                      <div className="form-group">
-                        <label className="auth-label">New Password (Optional)</label>
-                        <input name="password" type="password" placeholder="Leave blank to keep current" className="auth-input" />
-                      </div>
-                      <button type="submit" className="primary-cta" style={{ gridColumn: 'span 2' }}>Update Profile</button>
-                    </form>
-                  </section>
+                      <h3>{user.fullName}</h3>
+                      {user.isVerified && <span className="pro-verified-pill">✓ Verified Account</span>}
+                    </div>
+                    <nav className="pro-account-nav">
+                      <button
+                        className={`pro-nav-item ${accountTab === 'profile' ? 'active' : ''}`}
+                        onClick={() => setAccountTab('profile')}
+                      >
+                        <span className="pro-nav-icon">👤</span> Profile Details
+                      </button>
+                      <button
+                        className={`pro-nav-item ${accountTab === 'inquiries' ? 'active' : ''}`}
+                        onClick={() => { setAccountTab('inquiries'); fetchUserInquiries(); }}
+                      >
+                        <span className="pro-nav-icon">✉️</span> Messages & Inquiries
+                      </button>
+                      <button
+                        className={`pro-nav-item ${accountTab === 'bookings' ? 'active' : ''}`}
+                        onClick={() => { setAccountTab('bookings'); fetchMyBookings(); }}
+                      >
+                        <span className="pro-nav-icon">🛏️</span> Your Bookings
+                      </button>
+                      <button
+                        className={`pro-nav-item ${accountTab === 'incoming' ? 'active' : ''}`}
+                        onClick={() => { setAccountTab('incoming'); fetchOwnerBookings(); }}
+                      >
+                        <span className="pro-nav-icon">📑</span> Incoming Bookings
+                      </button>
+                    </nav>
+                  </aside>
 
-                  <section>
-                    <h3 className="account-section-title">✉️ Room Inquiries</h3>
-                    {userInquiries.length === 0 ? (
-                      <p style={{ textAlign: 'center', color: '#9098b7', padding: '2rem' }}>No inquiries yet.</p>
-                    ) : (
-                      <div className="inquiry-grid">
-                        {userInquiries.map(inq => (
-                          <div key={inq.id} className="inquiry-card">
-                            <div className="inquiry-header">
-                              <span className="inquiry-room-tag">{inq.room_title}</span>
-                              <span>{new Date(inq.created_at).toLocaleDateString()}</span>
+                  <main className="pro-account-main">
+                    {accountTab === 'profile' && (
+                      <div className="pro-section">
+                        <header className="pro-section-header">
+                          <h2>Profile Settings</h2>
+                          <p>Manage your account information and password</p>
+                        </header>
+                        <form onSubmit={handleUpdateProfile} className="pro-form">
+                          <div className="pro-form-row">
+                            <div className="pro-field">
+                              <label>Full Name</label>
+                              <input name="fullName" defaultValue={user.fullName} required />
                             </div>
-                            <div className="inquiry-sender">{inq.sender_name}</div>
-                            <div className="inquiry-contact">
-                              📧 {inq.sender_email} {inq.sender_phone && `| 📞 ${inq.sender_phone}`}
+                            <div className="pro-field">
+                              <label>Email Address</label>
+                              <input name="email" type="email" defaultValue={user.email} required />
                             </div>
-                            <div className="inquiry-message">"{inq.message}"</div>
                           </div>
-                        ))}
+                          <div className="pro-form-row">
+                            <div className="pro-field">
+                              <label>Phone Number</label>
+                              <input name="phoneNumber" type="tel" defaultValue={user.phoneNumber} required />
+                            </div>
+                            <div className="pro-field">
+                              <label>New Password (Optional)</label>
+                              <input name="password" type="password" placeholder="••••••••" />
+                            </div>
+                          </div>
+                          <div className="pro-form-actions">
+                            <button type="submit" className="pro-button-primary">Save Changes</button>
+                          </div>
+                        </form>
                       </div>
                     )}
-                  </section>
+
+                    {accountTab === 'inquiries' && (
+                      <div className="pro-section">
+                        <header className="pro-section-header">
+                          <h2>Recent Inquiries</h2>
+                          <p>Messages you've sent regarding rooms</p>
+                        </header>
+                        {userInquiries.length === 0 ? (
+                          <div className="pro-empty-state">
+                            <span className="pro-empty-icon">📂</span>
+                            <p>You haven't sent any inquiries yet.</p>
+                          </div>
+                        ) : (
+                          <div className="pro-inquiry-list">
+                            {userInquiries.map(inq => (
+                              <div key={inq.id} className="pro-inquiry-card">
+                                <div className="pro-inquiry-card-header">
+                                  <span className="pro-room-tag">{inq.room_title}</span>
+                                  <time>{new Date(inq.created_at).toLocaleDateString()}</time>
+                                </div>
+                                <div className="pro-inquiry-body">
+                                  <p className="pro-message-bubble">"{inq.message}"</p>
+                                </div>
+                                <div className="pro-inquiry-footer">
+                                  <span>Sent as: <strong>{inq.sender_name}</strong></span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {accountTab === 'bookings' && (
+                      <div className="pro-section">
+                        <header className="pro-section-header">
+                          <h2>Your Bookings</h2>
+                          <p>Track your room reservations and their status</p>
+                        </header>
+                        {bookingLoading ? (
+                          <div className="pro-loading">
+                            <div className="pro-spinner"></div>
+                            <p>Fetching your bookings...</p>
+                          </div>
+                        ) : myBookings.length === 0 ? (
+                          <div className="pro-empty-state">
+                            <span className="pro-empty-icon">📅</span>
+                            <p>No reservations found in your history.</p>
+                          </div>
+                        ) : (
+                          <div className="pro-booking-list">
+                            {myBookings.map(booking => (
+                              <div key={booking.id} className="pro-booking-card">
+                                <div className="pro-booking-meta">
+                                  <div className="pro-booking-room-info">
+                                    <h4>{booking.room_title}</h4>
+                                    <p className="pro-address">📍 {booking.room_address}, {booking.room_city}</p>
+                                  </div>
+                                  <span className={`pro-status-chip pro-status-${booking.status}`}>
+                                    {booking.status.toUpperCase()}
+                                  </span>
+                                </div>
+                                <div className="pro-booking-details-grid">
+                                  <div className="pro-detail-item">
+                                    <span className="pro-label">Check-in</span>
+                                    <span className="pro-val">{new Date(booking.check_in_date).toLocaleDateString()}</span>
+                                  </div>
+                                  <div className="pro-detail-item">
+                                    <span className="pro-label">Check-out</span>
+                                    <span className="pro-val">{new Date(booking.check_out_date).toLocaleDateString()}</span>
+                                  </div>
+                                  <div className="pro-detail-item">
+                                    <span className="pro-label">Guests</span>
+                                    <span className="pro-val">{booking.guests_count} Person(s)</span>
+                                  </div>
+                                  <div className="pro-detail-item">
+                                    <span className="pro-label">Total Paid</span>
+                                    <span className="pro-val pro-price">Rs {booking.total_price}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {accountTab === 'incoming' && (
+                      <div className="pro-section">
+                        <header className="pro-section-header">
+                          <h2>Incoming Bookings</h2>
+                          <p>Manage booking requests for the rooms you've registered</p>
+                        </header>
+
+                        {bookingLoading ? (
+                          <div className="pro-loading">
+                            <div className="pro-spinner"></div>
+                            <p>Loading requests...</p>
+                          </div>
+                        ) : ownerBookings.length === 0 ? (
+                          <div className="pro-empty-state">
+                            <span className="pro-empty-icon">📬</span>
+                            <p>No booking requests yet for your rooms.</p>
+                          </div>
+                        ) : (
+                          <div className="pro-booking-list">
+                            {ownerBookings.map(booking => (
+                              <div key={booking.id} className="pro-booking-card">
+                                <div className="pro-booking-meta">
+                                  <div className="pro-booking-room-info">
+                                    <h4>{booking.room_title}</h4>
+                                    <p className="pro-address">📍 {booking.room_address}, {booking.room_city}</p>
+                                    <p style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: '#818cf8', fontWeight: 'bold' }}>
+                                      Booked by: {booking.user_name}
+                                    </p>
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem' }}>
+                                    <span className={`pro-status-chip pro-status-${booking.status}`}>
+                                      {booking.status.toUpperCase()}
+                                    </span>
+                                    {booking.status === 'pending' && (
+                                      <div className="admin-actions">
+                                        <button
+                                          className="admin-btn verify-btn"
+                                          onClick={() => handleUpdateOwnerBookingStatus(booking.id, 'approved')}
+                                        >
+                                          Accept
+                                        </button>
+                                        <button
+                                          className="admin-btn unverify-btn"
+                                          onClick={() => handleUpdateOwnerBookingStatus(booking.id, 'rejected')}
+                                        >
+                                          Reject
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="pro-booking-details-grid">
+                                  <div className="pro-detail-item">
+                                    <span className="pro-label">Dates</span>
+                                    <span className="pro-val">
+                                      {new Date(booking.check_in_date).toLocaleDateString()} - {new Date(booking.check_out_date).toLocaleDateString()}
+                                    </span>
+                                  </div>
+                                  <div className="pro-detail-item">
+                                    <span className="pro-label">Guests</span>
+                                    <span className="pro-val">{booking.guests_count}</span>
+                                  </div>
+                                  <div className="pro-detail-item">
+                                    <span className="pro-label">Total Fee</span>
+                                    <span className="pro-val pro-price">Rs {booking.total_price}</span>
+                                  </div>
+                                  <div className="pro-detail-item">
+                                    <span className="pro-label">Created At</span>
+                                    <span className="pro-val">{new Date(booking.created_at).toLocaleDateString()}</span>
+                                  </div>
+                                </div>
+                                {booking.special_requests && (
+                                  <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                    <span className="pro-label" style={{ display: 'block', marginBottom: '0.25rem', color: '#94a3b8' }}>Special Requests</span>
+                                    <p style={{ margin: 0, fontSize: '0.9rem', fontStyle: 'italic', color: '#cbd5e1' }}>"{booking.special_requests}"</p>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </main>
                 </div>
               ) : (
                 <>
