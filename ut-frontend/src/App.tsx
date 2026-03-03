@@ -1081,7 +1081,7 @@ function App() {
       {currentView !== 'docs' && currentView !== 'premium' && currentView !== 'room-details' && (
         <>
           {isAdmin && (
-            <div className="dashboard-container">
+            <div className="dashboard-container admin-theme-wrapper">
               <div className="glass-card dashboard-panel admin-dashboard">
                 <div className="dashboard-header">
                   <div>
