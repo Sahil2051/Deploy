@@ -104,13 +104,18 @@ router.post('/verify', async (req, res) => {
         const decodedDataString = Buffer.from(data, 'base64').toString('utf8')
         const decodedData = JSON.parse(decodedDataString)
 
+        console.log('--- ESEWA VERIFICATION DATA ---')
+        console.log(JSON.stringify(decodedData, null, 2))
+
         // { transaction_code, status, total_amount, transaction_uuid, product_code, signature }
         if (decodedData.status !== 'COMPLETE') {
+            console.log('Payment status is NOT COMPLETE:', decodedData.status)
             return res.status(400).json({ message: 'Payment status is not COMPLETE.' })
         }
 
         // Extract userId from UUID (uuid was generated as `${Date.now()}-${userId}`)
         const userId = decodedData.transaction_uuid.split('-')[1]
+        console.log('Target UserID:', userId)
 
         // Find which plan was purchased based on amount
         let planType = 'day'
@@ -126,10 +131,17 @@ router.post('/verify', async (req, res) => {
         premiumUntil.setDate(premiumUntil.getDate() + planDurations[planType])
         const formattedDate = premiumUntil.toISOString().slice(0, 19).replace('T', ' ')
 
-        await db.execute(
+        const [result] = await db.execute(
             'UPDATE users SET is_premium = 1, premium_until = ?, premium_plan = ? WHERE id = ?',
             [formattedDate, planType, userId]
         )
+
+        if (result.affectedRows === 0) {
+            console.error('Update failed: No user found with ID:', userId)
+            return res.status(404).json({ message: 'User not found for this transaction.' })
+        }
+
+        console.log(`Successfully updated user ${userId} to premium ${planType}`)
 
         return res.json({
             message: `Payment successful! You are now an ${planType} premium user.`,

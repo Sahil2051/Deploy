@@ -321,7 +321,12 @@ function App() {
           })
           const result = await res.json()
           if (res.ok) {
-            const updatedUser = { ...user, isPremium: true, premiumUntil: result.premiumUntil }
+            const updatedUser = {
+              ...user,
+              isPremium: true,
+              premiumUntil: result.premiumUntil,
+              premiumPlan: result.premiumPlan
+            }
             setUser(updatedUser)
             localStorage.setItem('shelter_user', JSON.stringify(updatedUser))
             alert(result.message)
