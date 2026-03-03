@@ -304,23 +304,41 @@ function App() {
       fetchOwnerBookings()
     }
     fetchAllRooms()
+  }, [user])
 
-    // Handle eSewa Callback
+  // Split out eSewa Callback to be more robust
+  useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search)
     const paymentStatus = urlParams.get('payment')
     const paymentData = urlParams.get('data')
 
-    if (paymentStatus === 'success' && paymentData && user) {
-      const verifyPayment = async () => {
+    // Debug log to see what we're getting from eSewa
+    if (paymentStatus || paymentData) {
+      console.log('eSewa Redirect Detected:', { paymentStatus, hasData: !!paymentData })
+    }
+
+    if (paymentStatus === 'success' && paymentData) {
+      const runVerification = async () => {
+        // If user is not loaded yet, wait. Effect will re-run when user changes.
+        if (!user) {
+          console.log('Verification delayed: User state not ready.')
+          return
+        }
+
         setIsPremiumLoading(true)
+        console.log('Starting Backend Verification for User:', user.id)
+
         try {
           const res = await fetch(`${API_BASE_URL}/premium/verify`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ data: paymentData })
           })
+
           const result = await res.json()
+
           if (res.ok) {
+            console.log('Verification Success:', result)
             const updatedUser = {
               ...user,
               isPremium: true,
@@ -329,24 +347,30 @@ function App() {
             }
             setUser(updatedUser)
             localStorage.setItem('shelter_user', JSON.stringify(updatedUser))
-            alert(result.message)
-            // Clear URL params
+
+            // Critical: Force refresh of all rooms to unlock Nearby/Map instantly
+            fetchAllRooms()
+
+            alert(result.message || "Premium activated successfully!")
             window.history.replaceState({}, document.title, "/")
           } else {
-            alert(result.message || "Verification failed")
+            console.error('Verification Failed:', result)
+            alert(result.message || "Verification failed. Please contact support.")
+            window.history.replaceState({}, document.title, "/")
           }
         } catch (error) {
           console.error("Verification error:", error)
+          alert("Network error during verification. We'll try again automatically or you can sync status manually.")
         } finally {
           setIsPremiumLoading(false)
         }
       }
-      verifyPayment()
+      runVerification()
     } else if (paymentStatus === 'failure') {
       alert("Payment failed or was cancelled.")
       window.history.replaceState({}, document.title, "/")
     }
-  }, [user])
+  }, [user]) // Re-run when user state is initialized
 
   const fetchMyRooms = async () => {
     if (!user) return
@@ -928,6 +952,18 @@ function App() {
       <div className="glow-star" />
       <div className="hero-glow" aria-hidden="true" />
       <div className="hero-glow secondary" aria-hidden="true" />
+
+      {/* Verification Overlay */}
+      {isPremiumLoading && (
+        <div className="admin-verify-overlay" style={{ zIndex: 10000 }}>
+          <div className="admin-verify-card premium-card" style={{ textAlign: 'center' }}>
+            <div className="premium-badge-large" style={{ animation: 'pulse 2s infinite' }}>👑</div>
+            <h2 style={{ color: '#fff', marginBottom: '1rem' }}>Verifying...</h2>
+            <p style={{ color: '#94a3b8' }}>Please wait while we activate your premium experience.</p>
+            <div className="loading-spinner"></div>
+          </div>
+        </div>
+      )}
 
       <nav className="nav">
         <div className="logo" onClick={() => setCurrentView('home')} style={{ cursor: 'pointer' }}>
@@ -1912,7 +1948,6 @@ function App() {
                     <p className="eyebrow security-label">🔒 SECURE ACCESS PROTOCOL</p>
                     <h1 className="admin-verify-title">
                       Supreme Admin
-                      <br />
                       <span className="admin-glow">Authentication</span>
                     </h1>
                     <p className="admin-verify-subtitle">
@@ -2023,8 +2058,35 @@ function App() {
                               <input name="password" type="password" placeholder="••••••••" />
                             </div>
                           </div>
-                          <div className="pro-form-actions">
+                          <div className="pro-form-actions" style={{ display: 'flex', gap: '1rem' }}>
                             <button type="submit" className="pro-button-primary">Save Changes</button>
+                            <button
+                              type="button"
+                              className="pro-button-secondary ghost"
+                              onClick={async () => {
+                                if (!user) return
+                                setIsPremiumLoading(true)
+                                try {
+                                  const response = await fetch(`${API_BASE_URL}/auth/profile/${user.id}`)
+                                  const payload = await response.json()
+                                  if (response.ok) {
+                                    const updatedUser = payload.user
+                                    setUser(updatedUser)
+                                    localStorage.setItem('shelter_user', JSON.stringify(updatedUser))
+                                    alert("Status synced successfully! Your premium features are up to date.")
+                                  } else {
+                                    alert(payload.message || "Failed to sync status.")
+                                  }
+                                } catch (error) {
+                                  console.error("Sync error:", error)
+                                  alert("Network error while syncing status.")
+                                } finally {
+                                  setIsPremiumLoading(false)
+                                }
+                              }}
+                            >
+                              Sync Status
+                            </button>
                           </div>
                         </form>
                       </div>

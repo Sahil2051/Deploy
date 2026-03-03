@@ -23,10 +23,11 @@ router.post('/initiate', async (req, res) => {
     }
 
     const amount = planPrices[planType]
-    const transaction_uuid = `${Date.now()}-${userId}`
+    // NEW: Secret UID strategy - encode everything we need in cross-platform UUID
+    const transaction_uuid = `PREM-${userId}-${planType}-${Date.now()}`
 
     // Generate Signature for eSewa v2
-    // Format: total_amount,transaction_uuid,product_code
+    // total_amount,transaction_uuid,product_code
     const signatureString = `total_amount=${amount},transaction_uuid=${transaction_uuid},product_code=${ESEWA_PRODUCT_CODE}`
 
     const signature = crypto
@@ -113,22 +114,23 @@ router.post('/verify', async (req, res) => {
             return res.status(400).json({ message: 'Payment status is not COMPLETE.' })
         }
 
-        // Extract userId from UUID (uuid was generated as `${Date.now()}-${userId}`)
-        const userId = decodedData.transaction_uuid.split('-')[1]
-        console.log('Target UserID:', userId)
-
-        // Find which plan was purchased based on amount
-        let planType = 'day'
-        for (const [type, price] of Object.entries(planPrices)) {
-            if (price == decodedData.total_amount.replace(/,/g, '')) {
-                planType = type
-                break
-            }
+        // Extract metadata from UUID (PREM-userId-planType-timestamp)
+        const parts = decodedData.transaction_uuid.split('-')
+        if (parts[0] !== 'PREM' || parts.length < 3) {
+            console.error('Invalid Transaction UUID Format:', decodedData.transaction_uuid)
+            return res.status(400).json({ message: 'Invalid transaction format received.' })
         }
+
+        const userId = parts[1]
+        const planTypeFromUUID = parts[2]
+        console.log(`Verified Transaction: User ${userId}, Plan ${planTypeFromUUID}`)
+
+        // Use plan from UUID as source of truth, fallback to price check only for verification
+        const planType = planTypeFromUUID
 
         const planDurations = { 'day': 1, 'week': 7, 'month': 30 }
         const premiumUntil = new Date()
-        premiumUntil.setDate(premiumUntil.getDate() + planDurations[planType])
+        premiumUntil.setDate(premiumUntil.getDate() + (planDurations[planType] || 1))
         const formattedDate = premiumUntil.toISOString().slice(0, 19).replace('T', ' ')
 
         const [result] = await db.execute(

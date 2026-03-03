@@ -149,4 +149,34 @@ router.put('/profile', async (req, res) => {
   }
 })
 
+// GET User Profile (Status check)
+router.get('/profile/:id', async (req, res) => {
+  const { id } = req.params
+  try {
+    const [rows] = await db.execute(
+      'SELECT id, full_name, email, phone_number, is_verified, is_premium, premium_until, premium_plan FROM users WHERE id = ?',
+      [id]
+    )
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'User not found.' })
+    }
+    const user = rows[0]
+    return res.json({
+      user: {
+        id: user.id,
+        fullName: user.full_name,
+        email: user.email,
+        phoneNumber: user.phone_number,
+        isVerified: !!user.is_verified,
+        isPremium: !!user.is_premium,
+        premiumUntil: user.premium_until,
+        premiumPlan: user.premium_plan
+      }
+    })
+  } catch (error) {
+    console.error('Fetch profile error', error)
+    return res.status(500).json({ message: 'Failed to fetch user data.' })
+  }
+})
+
 module.exports = router
