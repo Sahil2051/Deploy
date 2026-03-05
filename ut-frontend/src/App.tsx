@@ -126,8 +126,30 @@ interface UserInquiry {
   created_at: string
 }
 
-type ViewState = 'home' | 'rooms' | 'premium' | 'docs' | 'room-details'
+type ViewState = 'home' | 'rooms' | 'premium' | 'docs' | 'room-details' | 'messages'
 type ModalView = 'signup' | 'login' | 'register-room' | 'admin-verify' | 'account' | null
+
+type Message = {
+  id: number
+  sender_id: number
+  receiver_id: number
+  content: string
+  is_read: boolean
+  created_at: string
+  sender_name: string
+}
+
+type Conversation = {
+  other_user_id: number
+  other_user_name: string
+  other_user_email: string
+  room_id: number | null
+  room_title: string | null
+  last_message_at: string
+  last_message: string | null
+  is_from_me: boolean
+  unread_count: number
+}
 
 type AdminUser = {
   id: number
@@ -177,8 +199,22 @@ function App() {
   const [myBookings, setMyBookings] = useState<Booking[]>([])
   const [ownerBookings, setOwnerBookings] = useState<Booking[]>([])
   const [accountTab, setAccountTab] = useState<'profile' | 'inquiries' | 'bookings' | 'incoming'>('profile')
-  const [bookingMessage, setBookingMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [bookingLoading, setBookingLoading] = useState(false)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  // Messaging state
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
+  const [messages, setMessages] = useState<Message[]>([])
+  const [newMessage, setNewMessage] = useState('')
+  const [loadingMessages, setLoadingMessages] = useState(false)
+  const [sendingMessage, setSendingMessage] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
+
+  const showToast = (text: string, type: 'success' | 'error' = 'success') => {
+    setToast({ text, type })
+    setTimeout(() => setToast(null), 4000)
+  }
   const [showLoginPassword, setShowLoginPassword] = useState(false)
   const [showSignupPassword, setShowSignupPassword] = useState(false)
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
@@ -649,7 +685,7 @@ function App() {
       }
       await fetchAllRooms()
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Failed to delete room')
+      showToast(error instanceof Error ? error.message : 'Failed to delete room', 'error')
     }
   }
 
@@ -663,7 +699,7 @@ function App() {
       fetchAdminRooms()
       fetchAdminBookings()
     } else {
-      alert('Invalid master password')
+      showToast('Invalid master password', 'error')
     }
   }
 
@@ -698,13 +734,13 @@ function App() {
       const data = await resp.json()
       if (resp.ok) {
         setUser({ ...user!, ...data.user })
-        alert('Profile updated!')
+        showToast('Profile updated successfully!')
         closeModal()
       } else {
-        alert(data.message || 'Update failed')
+        showToast(data.message || 'Update failed', 'error')
       }
     } catch (err) {
-      alert('Network error')
+      showToast('Network error', 'error')
     }
   }
 
@@ -727,27 +763,26 @@ function App() {
       })
       const data = await resp.json()
       if (resp.ok) {
-        alert('Inquiry sent successfully!')
+        showToast('Inquiry sent successfully!')
         e.currentTarget.reset()
       } else {
-        alert(data.message || 'Failed to send inquiry')
+        showToast(data.message || 'Failed to send inquiry', 'error')
       }
     } catch (err) {
-      alert('Network error')
+      showToast('Network error', 'error')
     }
   }
 
   const handleBookingSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!user) {
-      alert('Please login to book a room.')
+      showToast('Please login to book a room.', 'error')
       openModal('login')
       return
     }
     if (!selectedRoom) return
 
     setBookingLoading(true)
-    setBookingMessage(null)
 
     const payload = {
       userId: user.id,
@@ -767,17 +802,14 @@ function App() {
       })
       const data = await resp.json()
       if (resp.ok) {
-        setBookingMessage({ type: 'success', text: data.message })
-        setTimeout(() => {
-          setBookingMessage(null)
-          setBookingData(initialBookingState)
-        }, 3000)
+        showToast(data.message || 'Room booked successfully!')
+        setBookingData(initialBookingState)
         fetchMyBookings()
       } else {
-        setBookingMessage({ type: 'error', text: data.message || 'Booking failed' })
+        showToast(data.message || 'Booking failed', 'error')
       }
     } catch (err) {
-      setBookingMessage({ type: 'error', text: 'Network error' })
+      showToast('Network error', 'error')
     } finally {
       setBookingLoading(false)
     }
@@ -850,12 +882,14 @@ function App() {
       })
       if (response.ok) {
         fetchOwnerBookings()
+        showToast(`Booking ${status} successfully!`)
       } else {
         const data = await response.json()
-        alert(data.message || 'Failed to update booking status')
+        showToast(data.message || 'Failed to update booking status', 'error')
       }
     } catch (error) {
       console.error('Update room booking status error', error)
+      showToast('Failed to update booking status', 'error')
     }
   }
 
@@ -877,7 +911,7 @@ function App() {
       await fetchAdminRooms()
       await fetchAllRooms()
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Failed to delete user')
+      showToast(error instanceof Error ? error.message : 'Failed to delete user', 'error')
     }
   }
 
@@ -894,8 +928,9 @@ function App() {
       }
 
       await fetchAdminUsers()
+      showToast('User verified successfully!')
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Failed to verify user')
+      showToast(error instanceof Error ? error.message : 'Failed to verify user', 'error')
     }
   }
 
@@ -912,9 +947,130 @@ function App() {
       }
 
       await fetchAdminUsers()
+      showToast('User unverified successfully!')
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Failed to unverify user')
+      showToast(error instanceof Error ? error.message : 'Failed to unverify user', 'error')
     }
+  }
+
+  // Messaging functions
+  const fetchConversations = async () => {
+    if (!user) return
+    try {
+      const response = await fetch(`${API_BASE_URL}/messages/conversations?userId=${user.id}`)
+      const data = await response.json()
+      if (response.ok) {
+        setConversations(data.conversations)
+      }
+    } catch (error) {
+      console.error('Failed to fetch conversations:', error)
+    }
+  }
+
+  const fetchMessages = async (otherUserId: number, roomId?: number) => {
+    if (!user) return
+    setLoadingMessages(true)
+    try {
+      const url = roomId 
+        ? `${API_BASE_URL}/messages/conversation/${otherUserId}?userId=${user.id}&roomId=${roomId}`
+        : `${API_BASE_URL}/messages/conversation/${otherUserId}?userId=${user.id}`
+      const response = await fetch(url)
+      const data = await response.json()
+      if (response.ok) {
+        setMessages(data.messages)
+      }
+    } catch (error) {
+      console.error('Failed to fetch messages:', error)
+    } finally {
+      setLoadingMessages(false)
+    }
+  }
+
+  const sendMessage = async (receiverId: number, content: string, roomId?: number) => {
+    if (!user || !content.trim()) return
+    setSendingMessage(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/messages/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          receiverId,
+          content: content.trim(),
+          roomId
+        })
+      })
+      const data = await response.json()
+      if (response.ok) {
+        setNewMessage('')
+        // Refresh conversations and messages
+        await fetchConversations()
+        if (selectedConversation) {
+          await fetchMessages(selectedConversation.other_user_id, selectedConversation.room_id || undefined)
+        }
+        showToast('Message sent!')
+      } else {
+        showToast(data.message || 'Failed to send message', 'error')
+      }
+    } catch (error) {
+      showToast('Failed to send message', 'error')
+    } finally {
+      setSendingMessage(false)
+    }
+  }
+
+  const fetchUnreadCount = async () => {
+    if (!user) return
+    try {
+      const response = await fetch(`${API_BASE_URL}/messages/unread-count?userId=${user.id}`)
+      const data = await response.json()
+      if (response.ok) {
+        setUnreadCount(data.unreadCount)
+      }
+    } catch (error) {
+      console.error('Failed to fetch unread count:', error)
+    }
+  }
+
+  const handleSelectConversation = async (conversation: Conversation) => {
+    setSelectedConversation(conversation)
+    await fetchMessages(conversation.other_user_id, conversation.room_id || undefined)
+  }
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedConversation || !newMessage.trim()) return
+    await sendMessage(selectedConversation.other_user_id, newMessage, selectedConversation.room_id || undefined)
+  }
+
+  const handleStartChatWithOwner = async (room: Room) => {
+    if (!user) {
+      setActiveModal('login')
+      return
+    }
+    // Find or create conversation with owner
+    const existingConversation = conversations.find(
+      c => c.other_user_id === room.owner_id && c.room_id === room.id
+    )
+    if (existingConversation) {
+      setSelectedConversation(existingConversation)
+      await fetchMessages(room.owner_id, room.id)
+    } else {
+      // Create new conversation by sending first message
+      setSelectedConversation({
+        other_user_id: room.owner_id,
+        other_user_name: room.owner_name,
+        other_user_email: room.contact_email || '',
+        room_id: room.id,
+        room_title: room.title,
+        last_message_at: new Date().toISOString(),
+        last_message: null,
+        is_from_me: false,
+        unread_count: 0
+      })
+      await fetchMessages(room.owner_id, room.id)
+    }
+    setCurrentView('messages')
   }
 
   useEffect(() => {
@@ -927,6 +1083,28 @@ function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Load conversations when messages view is opened
+  useEffect(() => {
+    if (currentView === 'messages' && user) {
+      fetchConversations()
+      fetchUnreadCount()
+    }
+  }, [currentView, user])
+
+  // Periodically check for new messages when user is logged in
+  useEffect(() => {
+    if (!user) return
+
+    const interval = setInterval(() => {
+      fetchUnreadCount()
+      if (currentView === 'messages') {
+        fetchConversations()
+      }
+    }, 30000) // Check every 30 seconds
+
+    return () => clearInterval(interval)
+  }, [user, currentView])
 
 
 
@@ -952,6 +1130,19 @@ function App() {
       <div className="glow-star" />
       <div className="hero-glow" aria-hidden="true" />
       <div className="hero-glow secondary" aria-hidden="true" />
+
+      {/* Global Toast Notification */}
+      {toast && (
+        <div className={`toast-container ${toast.type}`}>
+          <div className="toast-content">
+            <span className="toast-icon">
+              {toast.type === 'success' ? '✅' : '❌'}
+            </span>
+            <span className="toast-text">{toast.text}</span>
+          </div>
+          <div className="toast-progress" />
+        </div>
+      )}
 
       {/* Verification Overlay */}
       {isPremiumLoading && (
@@ -983,6 +1174,17 @@ function App() {
           >
             <span>🛏️</span> Rooms
           </button>
+          {user && (
+            <button
+              className={`nav-link ${(currentView as string) === 'messages' ? 'active' : ''}`}
+              onClick={() => {
+                setCurrentView('messages')
+                fetchConversations()
+              }}
+            >
+              <span>💬</span> Messages {unreadCount > 0 && <span className="unread-badge">{unreadCount}</span>}
+            </button>
+          )}
           <button
             className={`nav-link premium ${(currentView as string) === 'premium' ? 'active' : ''}`}
             onClick={() => setCurrentView('premium')}
@@ -1114,9 +1316,18 @@ function App() {
                   </a>
                 )}
                 {selectedRoom.contact_email && (
-                  <a href={`mailto:${selectedRoom.contact_email}`} className="ghost-cta mini" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+                  <a href={`mailto:${selectedRoom.contact_email}`} className="ghost-cta mini" style={{ display: 'block', textAlign: 'center', textDecoration: 'none', marginBottom: '0.5rem' }}>
                     ✉️ Email Owner
                   </a>
+                )}
+                {user && user.id !== selectedRoom.owner_id && (
+                  <button
+                    onClick={() => handleStartChatWithOwner(selectedRoom)}
+                    className="primary-cta compact"
+                    style={{ display: 'block', width: '100%', marginBottom: '0.5rem' }}
+                  >
+                    💬 Message Owner
+                  </button>
                 )}
 
                 <div className="inquiry-form-card">
@@ -1176,11 +1387,6 @@ function App() {
                       style={{ minHeight: '60px', padding: '0.8rem' }}
                     />
 
-                    {bookingMessage && (
-                      <div className={`form-feedback-premium ${bookingMessage.type}`}>
-                        {bookingMessage.type === 'success' ? '✅' : '❌'} {bookingMessage.text}
-                      </div>
-                    )}
 
                     <button
                       type="submit"
@@ -1368,6 +1574,141 @@ function App() {
                 </div>
               </div>
             )}
+          </div>
+        )
+      }
+
+      {
+        currentView === 'messages' && user && (
+          <div className="messages-container" style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
+            <div className="messages-header">
+              <h1 style={{ color: '#fff', marginBottom: '2rem' }}>Messages</h1>
+            </div>
+
+            <div className="messages-layout">
+              {/* Conversations List */}
+              <div className="conversations-panel">
+                <div className="conversations-header">
+                  <h3>Conversations</h3>
+                </div>
+                <div className="conversations-list">
+                  {conversations.length === 0 ? (
+                    <div className="empty-state">
+                      <MessageCircle size={48} style={{ color: '#64748b', marginBottom: '1rem' }} />
+                      <p style={{ color: '#64748b' }}>No conversations yet</p>
+                      <p style={{ color: '#64748b', fontSize: '0.9rem' }}>Start chatting with room owners!</p>
+                    </div>
+                  ) : (
+                    conversations.map((conversation) => (
+                      <div
+                        key={`${conversation.other_user_id}-${conversation.room_id}`}
+                        className={`conversation-item ${selectedConversation?.other_user_id === conversation.other_user_id && selectedConversation?.room_id === conversation.room_id ? 'active' : ''}`}
+                        onClick={() => handleSelectConversation(conversation)}
+                      >
+                        <div className="conversation-avatar">
+                          {conversation.other_user_name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="conversation-content">
+                          <div className="conversation-name">
+                            {conversation.other_user_name}
+                            {conversation.unread_count > 0 && (
+                              <span className="unread-indicator">{conversation.unread_count}</span>
+                            )}
+                          </div>
+                          <div className="conversation-preview">
+                            {conversation.room_title && (
+                              <span className="room-context">{conversation.room_title}: </span>
+                            )}
+                            {conversation.last_message || 'No messages yet'}
+                          </div>
+                          <div className="conversation-time">
+                            {new Date(conversation.last_message_at).toLocaleDateString()}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Messages Area */}
+              <div className="messages-panel">
+                {selectedConversation ? (
+                  <>
+                    <div className="messages-header">
+                      <div className="chat-partner">
+                        <div className="partner-avatar">
+                          {selectedConversation.other_user_name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="partner-info">
+                          <h4>{selectedConversation.other_user_name}</h4>
+                          {selectedConversation.room_title && (
+                            <p style={{ color: '#64748b', fontSize: '0.9rem' }}>
+                              Regarding: {selectedConversation.room_title}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="messages-list">
+                      {loadingMessages ? (
+                        <div className="loading-state">
+                          <div className="loading-spinner"></div>
+                          <p>Loading messages...</p>
+                        </div>
+                      ) : messages.length === 0 ? (
+                        <div className="empty-chat">
+                          <MessageCircle size={48} style={{ color: '#64748b', marginBottom: '1rem' }} />
+                          <p style={{ color: '#64748b' }}>No messages yet</p>
+                          <p style={{ color: '#64748b', fontSize: '0.9rem' }}>Send the first message!</p>
+                        </div>
+                      ) : (
+                        messages.map((message) => (
+                          <div
+                            key={message.id}
+                            className={`message-item ${message.sender_id === user.id ? 'sent' : 'received'}`}
+                          >
+                            <div className="message-content">
+                              <p>{message.content}</p>
+                              <span className="message-time">
+                                {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    <form className="message-input-form" onSubmit={handleSendMessage}>
+                      <div className="message-input-container">
+                        <input
+                          type="text"
+                          value={newMessage}
+                          onChange={(e) => setNewMessage(e.target.value)}
+                          placeholder="Type your message..."
+                          className="message-input"
+                          disabled={sendingMessage}
+                        />
+                        <button
+                          type="submit"
+                          className="send-message-btn"
+                          disabled={!newMessage.trim() || sendingMessage}
+                        >
+                          {sendingMessage ? '...' : 'Send'}
+                        </button>
+                      </div>
+                    </form>
+                  </>
+                ) : (
+                  <div className="no-chat-selected">
+                    <MessageCircle size={64} style={{ color: '#64748b', marginBottom: '1rem' }} />
+                    <h3>Select a conversation</h3>
+                    <p style={{ color: '#64748b' }}>Choose a conversation from the list to start messaging</p>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )
       }
