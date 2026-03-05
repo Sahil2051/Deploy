@@ -3223,6 +3223,32 @@ label span {
   flex-shrink: 0;
 }
 
+.favorite-star {
+  color: #facc15;
+  margin-left: 0.3rem;
+}
+
+.conv-action {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  margin-left: 0.3rem;
+  font-size: 0.9rem;
+}
+
+.conv-action:hover {
+  color: #fff;
+}
+
+.fav-btn {
+  color: #facc15;
+}
+
+.delete-btn {
+  color: #ef4444;
+}
+
 .conversation-content {
   flex: 1;
   min-width: 0;

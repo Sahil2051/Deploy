@@ -31,6 +31,7 @@ router.get('/conversations', requireAuth, async (req, res) => {
         ct.last_message_at,
         cm.content as last_message,
         cm.sender_id = ? as is_from_me,
+        ct.is_favorite,
         (SELECT COUNT(*) FROM chat_messages WHERE receiver_id = ? AND sender_id = other_user_id AND is_read = FALSE) as unread_count
       FROM chat_threads ct
       JOIN users u ON (u.id = CASE WHEN ct.participant1_id = ? THEN ct.participant2_id ELSE ct.participant1_id END)
@@ -42,7 +43,7 @@ router.get('/conversations', requireAuth, async (req, res) => {
         ORDER BY created_at DESC LIMIT 1
       )
       WHERE (ct.participant1_id = ? OR ct.participant2_id = ?)
-      ORDER BY ct.last_message_at DESC
+      ORDER BY ct.is_favorite DESC, ct.last_message_at DESC
     `, [userId, userId, userId, userId, userId, userId])
 
     res.json({ conversations })
@@ -129,13 +130,19 @@ router.post('/send', requireAuth, async (req, res) => {
   }
 })
 
-// Delete a conversation (soft delete by marking messages as deleted for this user)
+// Delete a conversation (remove all messages and thread)
 router.delete('/conversation/:otherUserId', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id
     const otherUserId = req.params.otherUserId
 
-    // For now, we'll just delete the thread. In a real app, you might want soft deletes
+    // delete messages between these users
+    await db.execute(`
+      DELETE FROM chat_messages
+      WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
+    `, [userId, otherUserId, otherUserId, userId])
+
+    // delete any thread records (all rooms)
     await db.execute(`
       DELETE FROM chat_threads
       WHERE (participant1_id = ? AND participant2_id = ?)
@@ -164,6 +171,30 @@ router.get('/unread-count', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Get unread count error:', error)
     res.status(500).json({ message: 'Failed to get unread count' })
+  }
+})
+
+// Toggle favorite status for a conversation
+router.patch('/conversation/:otherUserId/favorite', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id
+    const otherUserId = req.params.otherUserId
+    const { favorite } = req.body
+
+    if (typeof favorite !== 'boolean') {
+      return res.status(400).json({ message: 'favorite must be boolean' })
+    }
+
+    await db.execute(`
+      UPDATE chat_threads
+      SET is_favorite = ?
+      WHERE (participant1_id = ? AND participant2_id = ?) OR (participant1_id = ? AND participant2_id = ?)
+    `, [favorite ? 1 : 0, userId, otherUserId, otherUserId, userId])
+
+    res.json({ message: 'Favorite status updated' })
+  } catch (error) {
+    console.error('Toggle favorite error:', error)
+    res.status(500).json({ message: 'Failed to update favorite status' })
   }
 })
 

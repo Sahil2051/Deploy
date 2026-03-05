@@ -149,6 +149,7 @@ type Conversation = {
   last_message: string | null
   is_from_me: boolean
   unread_count: number
+  is_favorite?: boolean
 }
 
 type AdminUser = {
@@ -954,13 +955,41 @@ function App() {
   }
 
   // Messaging functions
+  const mergeConversations = (raw: any[]): Conversation[] => {
+    const map: Record<number, Conversation> = {}
+    raw.forEach((c: any) => {
+      const existing = map[c.other_user_id]
+      if (!existing) {
+        map[c.other_user_id] = { ...c }
+      } else {
+        // pick newest message/time
+        if (new Date(c.last_message_at) > new Date(existing.last_message_at)) {
+          existing.last_message_at = c.last_message_at
+          existing.last_message = c.last_message
+          existing.room_id = existing.room_id || c.room_id
+          existing.room_title = existing.room_title || c.room_title
+        }
+        existing.unread_count = (existing.unread_count || 0) + (c.unread_count || 0)
+        if (c.is_favorite) existing.is_favorite = true
+      }
+    })
+    const arr: Conversation[] = Object.values(map)
+    arr.sort((a, b) => {
+      if ((b.is_favorite ? 1 : 0) - (a.is_favorite ? 1 : 0) !== 0) {
+        return (b.is_favorite ? 1 : 0) - (a.is_favorite ? 1 : 0)
+      }
+      return new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()
+    })
+    return arr
+  }
+
   const fetchConversations = async () => {
     if (!user) return
     try {
       const response = await fetch(`${API_BASE_URL}/messages/conversations?userId=${user.id}`)
       const data = await response.json()
       if (response.ok) {
-        setConversations(data.conversations)
+        setConversations(mergeConversations(data.conversations) as Conversation[])
       }
     } catch (error) {
       console.error('Failed to fetch conversations:', error)
@@ -1033,8 +1062,45 @@ function App() {
   }
 
   const handleSelectConversation = async (conversation: Conversation) => {
+    // load all messages with that user regardless of room context
     setSelectedConversation(conversation)
-    await fetchMessages(conversation.other_user_id, conversation.room_id || undefined)
+    await fetchMessages(conversation.other_user_id)
+  }
+
+  const handleDeleteConversation = async (conversation: Conversation) => {
+    // function used in UI list
+    if (!user) return
+    try {
+      const response = await fetch(`${API_BASE_URL}/messages/conversation/${conversation.other_user_id}?userId=${user.id}`, {
+        method: 'DELETE'
+      })
+      if (response.ok) {
+        setConversations(convs => convs.filter(c => c.other_user_id !== conversation.other_user_id))
+        if (selectedConversation?.other_user_id === conversation.other_user_id) {
+          setSelectedConversation(null)
+          setMessages([])
+        }
+        showToast('Conversation deleted')
+      }
+    } catch (e) {
+      showToast('Failed to delete conversation', 'error')
+    }
+  }
+
+  const handleToggleFavorite = async (conversation: Conversation) => {
+    if (!user) return
+    try {
+      const response = await fetch(`${API_BASE_URL}/messages/conversation/${conversation.other_user_id}/favorite?userId=${user.id}`, {
+        method: 'PATCH',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ favorite: !conversation.is_favorite })
+      })
+      if (response.ok) {
+        await fetchConversations()
+      }
+    } catch (e) {
+      console.error(e)
+    }
   }
 
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -1601,8 +1667,8 @@ function App() {
                   ) : (
                     conversations.map((conversation) => (
                       <div
-                        key={`${conversation.other_user_id}-${conversation.room_id}`}
-                        className={`conversation-item ${selectedConversation?.other_user_id === conversation.other_user_id && selectedConversation?.room_id === conversation.room_id ? 'active' : ''}`}
+                        key={conversation.other_user_id}
+                        className={`conversation-item ${selectedConversation?.other_user_id === conversation.other_user_id ? 'active' : ''}`}
                         onClick={() => handleSelectConversation(conversation)}
                       >
                         <div className="conversation-avatar">
@@ -1611,6 +1677,23 @@ function App() {
                         <div className="conversation-content">
                           <div className="conversation-name">
                             {conversation.other_user_name}
+                            {conversation.is_favorite && (
+                              <span className="favorite-star">★</span>
+                            )}
+                            <button
+                              className="conv-action fav-btn"
+                              onClick={(e) => { e.stopPropagation(); handleToggleFavorite(conversation); }}
+                              title={conversation.is_favorite ? 'Unfavorite' : 'Favorite'}
+                            >
+                              {conversation.is_favorite ? '★' : '☆'}
+                            </button>
+                            <button
+                              className="conv-action delete-btn"
+                              onClick={(e) => { e.stopPropagation(); handleDeleteConversation(conversation); }}
+                              title="Delete conversation"
+                            >
+                              🗑️
+                            </button>
                             {conversation.unread_count > 0 && (
                               <span className="unread-indicator">{conversation.unread_count}</span>
                             )}
