@@ -1389,7 +1389,7 @@ function App() {
                 {user && user.id !== selectedRoom.owner_id && (
                   <button
                     onClick={() => handleStartChatWithOwner(selectedRoom)}
-                    className="primary-cta compact"
+                    className="message-owner-btn"
                     style={{ display: 'block', width: '100%', marginBottom: '0.5rem' }}
                   >
                     💬 Message Owner
@@ -1685,14 +1685,14 @@ function App() {
                               onClick={(e) => { e.stopPropagation(); handleToggleFavorite(conversation); }}
                               title={conversation.is_favorite ? 'Unfavorite' : 'Favorite'}
                             >
-                              {conversation.is_favorite ? '★' : '☆'}
+                              {conversation.is_favorite ? '⭐' : '☆'}
                             </button>
                             <button
                               className="conv-action delete-btn"
                               onClick={(e) => { e.stopPropagation(); handleDeleteConversation(conversation); }}
                               title="Delete conversation"
                             >
-                              🗑️
+                              ✕
                             </button>
                             {conversation.unread_count > 0 && (
                               <span className="unread-indicator">{conversation.unread_count}</span>

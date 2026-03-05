@@ -3233,20 +3233,88 @@ label span {
   border: none;
   color: #94a3b8;
   cursor: pointer;
-  margin-left: 0.3rem;
-  font-size: 0.9rem;
+  margin-left: 0.8rem;
+  font-size: 1rem;
+  padding: 0.3rem;
+  border-radius: 6px;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
 }
 
 .conv-action:hover {
   color: #fff;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .fav-btn {
   color: #facc15;
+  transition: all 0.3s ease;
+  font-size: 1.1rem;
+}
+
+.fav-btn:hover {
+  color: #fbbf24;
+  transform: scale(1.3) rotate(15deg);
+  text-shadow: 0 0 8px rgba(250, 204, 21, 0.6);
+  filter: drop-shadow(0 0 3px rgba(250, 204, 21, 0.4));
 }
 
 .delete-btn {
   color: #ef4444;
+  transition: all 0.3s ease;
+  font-size: 1.1rem;
+}
+
+.delete-btn:hover {
+  color: #ff6b6b;
+  transform: scale(1.25) rotate(-15deg);
+  text-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+}
+
+/* Message Owner Button */
+.message-owner-btn {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 0.85rem 1.5rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-family: inherit;
+  box-shadow: 0 8px 20px rgba(16, 185, 129, 0.35);
+  position: relative;
+  overflow: hidden;
+}
+
+.message-owner-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.message-owner-btn:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 28px rgba(16, 185, 129, 0.45);
+  background: linear-gradient(135deg, #059669, #047857);
+}
+
+.message-owner-btn:hover::before {
+  left: 100%;
+}
+
+.message-owner-btn:active {
+  transform: translateY(-1px);
 }
 
 .conversation-content {
