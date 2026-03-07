@@ -92,7 +92,7 @@ router.post('/purchase', async (req, res) => {
     }
 })
 
-// 2. Verify Payment - Decodes eSewa response and updates DB
+// 2. Verify Payment - Decodes eSewa response and CREATES A BILL
 router.post('/verify', async (req, res) => {
     const { data } = req.body || {}
 
@@ -101,58 +101,141 @@ router.post('/verify', async (req, res) => {
     }
 
     try {
-        // eSewa v2 sends base64 encoded JSON
         const decodedDataString = Buffer.from(data, 'base64').toString('utf8')
         const decodedData = JSON.parse(decodedDataString)
 
-        console.log('--- ESEWA VERIFICATION DATA ---')
-        console.log(JSON.stringify(decodedData, null, 2))
-
-        // { transaction_code, status, total_amount, transaction_uuid, product_code, signature }
         if (decodedData.status !== 'COMPLETE') {
-            console.log('Payment status is NOT COMPLETE:', decodedData.status)
             return res.status(400).json({ message: 'Payment status is not COMPLETE.' })
         }
 
-        // Extract metadata from UUID (PREM-userId-planType-timestamp)
         const parts = decodedData.transaction_uuid.split('-')
         if (parts[0] !== 'PREM' || parts.length < 3) {
-            console.error('Invalid Transaction UUID Format:', decodedData.transaction_uuid)
             return res.status(400).json({ message: 'Invalid transaction format received.' })
         }
 
         const userId = parts[1]
-        const planTypeFromUUID = parts[2]
-        console.log(`Verified Transaction: User ${userId}, Plan ${planTypeFromUUID}`)
+        const planType = parts[2]
+        const amount = decodedData.total_amount
 
-        // Use plan from UUID as source of truth, fallback to price check only for verification
-        const planType = planTypeFromUUID
-
-        const planDurations = { 'day': 1, 'week': 7, 'month': 30 }
-        const premiumUntil = new Date()
-        premiumUntil.setDate(premiumUntil.getDate() + (planDurations[planType] || 1))
-        const formattedDate = premiumUntil.toISOString().slice(0, 19).replace('T', ' ')
-
-        const [result] = await db.execute(
-            'UPDATE users SET is_premium = 1, premium_until = ?, premium_plan = ? WHERE id = ?',
-            [formattedDate, planType, userId]
+        // Create a bill instead of activating immediately
+        await db.execute(
+            'INSERT INTO premium_bills (user_id, plan_type, amount, transaction_uuid) VALUES (?, ?, ?, ?)',
+            [userId, planType, amount, decodedData.transaction_uuid]
         )
 
-        if (result.affectedRows === 0) {
-            console.error('Update failed: No user found with ID:', userId)
-            return res.status(404).json({ message: 'User not found for this transaction.' })
-        }
-
-        console.log(`Successfully updated user ${userId} to premium ${planType}`)
-
         return res.json({
-            message: `Payment successful! You are now an ${planType} premium user.`,
-            premiumUntil: formattedDate,
-            premiumPlan: planType
+            message: `Payment successful! A bill for ${planType} has been generated in your account.`,
+            planType: planType
         })
     } catch (error) {
         console.error('Verification error', error)
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(400).json({ message: 'This transaction has already been processed.' })
+        }
         return res.status(500).json({ message: 'Failed to verify payment.' })
+    }
+})
+
+// 2.5 Create Bill Immediately on Click (Simulated Purchase)
+router.post('/create-bill-on-click', async (req, res) => {
+    const { userId, planType, amount } = req.body || {}
+
+    if (!userId || !planType || !amount) {
+        return res.status(400).json({ message: 'Missing required fields.' })
+    }
+
+    const transaction_uuid = `PREM-${userId}-${planType}-${Date.now()}`
+
+    try {
+        await db.execute(
+            'INSERT INTO premium_bills (user_id, plan_type, amount, transaction_uuid, is_activated) VALUES (?, ?, ?, ?, 0)',
+            [userId, planType, amount, transaction_uuid]
+        )
+
+        res.json({
+            message: 'Bill generated successfully! You can activate it in your account.',
+            transactionUuid: transaction_uuid
+        })
+    } catch (error) {
+        console.error('Create bill error', error)
+        res.status(500).json({ message: 'Failed to create bill.' })
+    }
+})
+
+// 3. Fetch Bills for a User
+router.get('/bills/:userId', async (req, res) => {
+    const { userId } = req.params
+    try {
+        const [bills] = await db.execute(
+            'SELECT * FROM premium_bills WHERE user_id = ? ORDER BY paid_at DESC',
+            [userId]
+        )
+        res.json(bills)
+    } catch (error) {
+        console.error('Fetch bills error', error)
+        res.status(500).json({ message: 'Failed to fetch bills.' })
+    }
+})
+
+// 4. Activate a Bill
+router.post('/activate', async (req, res) => {
+    const { billId, userId } = req.body
+
+    try {
+        // Find the bill
+        const [bills] = await db.execute(
+            'SELECT * FROM premium_bills WHERE id = ? AND user_id = ? AND is_activated = 0',
+            [billId, userId]
+        )
+
+        if (bills.length === 0) {
+            return res.status(400).json({ message: 'Bill not found or already activated.' })
+        }
+
+        const bill = bills[0]
+        const planDurations = { 'day': 1, 'week': 7, 'month': 30 }
+        const durationDays = planDurations[bill.plan_type] || 1
+
+        const activatedAt = new Date()
+        const expiresAt = new Date()
+        expiresAt.setDate(expiresAt.getDate() + durationDays)
+
+        const formattedActivatedAt = activatedAt.toISOString().slice(0, 19).replace('T', ' ')
+        const formattedExpiresAt = expiresAt.toISOString().slice(0, 19).replace('T', ' ')
+
+        // Begin transaction
+        const connection = await db.getConnection()
+        await connection.beginTransaction()
+
+        try {
+            // Update the bill
+            await connection.execute(
+                'UPDATE premium_bills SET is_activated = 1, activated_at = ?, expires_at = ? WHERE id = ?',
+                [formattedActivatedAt, formattedExpiresAt, billId]
+            )
+
+            // Update the user
+            await connection.execute(
+                'UPDATE users SET is_premium = 1, premium_until = ?, premium_plan = ? WHERE id = ?',
+                [formattedExpiresAt, bill.plan_type, userId]
+            )
+
+            await connection.commit()
+            connection.release()
+
+            res.json({
+                message: `Premium ${bill.plan_type} plan activated!`,
+                expiresAt: formattedExpiresAt,
+                planType: bill.plan_type
+            })
+        } catch (err) {
+            await connection.rollback()
+            connection.release()
+            throw err
+        }
+    } catch (error) {
+        console.error('Activation error', error)
+        res.status(500).json({ message: 'Failed to activate premium.' })
     }
 })
 

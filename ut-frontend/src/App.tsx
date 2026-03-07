@@ -189,6 +189,8 @@ function App() {
   const [roomListTab, setRoomListTab] = useState<'all' | 'nearby' | 'map'>('all')
   const [loadingRooms, setLoadingRooms] = useState(false)
   const [userInquiries, setUserInquiries] = useState<UserInquiry[]>([])
+  const [userBills, setUserBills] = useState<any[]>([])
+  const [isAccountMaximized, setIsAccountMaximized] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [adminMasterPassword, setAdminMasterPassword] = useState('')
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([])
@@ -199,7 +201,7 @@ function App() {
   const [bookingData, setBookingData] = useState(initialBookingState)
   const [myBookings, setMyBookings] = useState<Booking[]>([])
   const [ownerBookings, setOwnerBookings] = useState<Booking[]>([])
-  const [accountTab, setAccountTab] = useState<'profile' | 'inquiries' | 'bookings' | 'incoming'>('profile')
+  const [accountTab, setAccountTab] = useState<'profile' | 'inquiries' | 'bookings' | 'incoming' | 'billings'>('profile')
   const [bookingLoading, setBookingLoading] = useState(false)
   const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
@@ -274,7 +276,21 @@ function App() {
 
     setIsPremiumLoading(true)
     try {
-      // 1. Initiate on Backend
+      // 1. Create the bill IMMEDIATELY on click
+      const amount = { 'day': 99, 'week': 499, 'month': 1499 }[planType]
+      const billRes = await fetch(`${API_BASE_URL}/premium/create-bill-on-click`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, planType, amount })
+      })
+
+      if (!billRes.ok) {
+        throw new Error('Failed to generate bill record.')
+      }
+
+      showToast('Bill generated! Check your account billings page.', 'success')
+
+      // 2. eSewa Initiation (for show)
       const res = await fetch(`${API_BASE_URL}/premium/initiate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -284,7 +300,7 @@ function App() {
       const params = await res.json()
       if (!res.ok) throw new Error(params.message || 'Initiation failed')
 
-      // 2. Create hidden form and submit to eSewa
+      // 3. Create hidden form and submit to eSewa
       const form = document.createElement('form')
       form.setAttribute('method', 'POST')
       form.setAttribute('action', 'https://rc-epay.esewa.com.np/api/epay/main/v2/form')
@@ -315,7 +331,7 @@ function App() {
       form.submit()
     } catch (error) {
       console.error("Purchase error:", error)
-      alert(error instanceof Error ? error.message : "Failed to process purchase.")
+      showToast(error instanceof Error ? error.message : "Failed to process purchase.", 'error')
       setIsPremiumLoading(false)
     }
   }
@@ -481,6 +497,8 @@ function App() {
     setRoomData(initialRoomState)
     setRoomStep(1)
     setRoomPhotos([])
+    setIsAccountMaximized(false)
+    setAccountTab('profile')
   }
 
   const handleLogout = () => {
@@ -707,11 +725,61 @@ function App() {
   const fetchUserInquiries = async () => {
     if (!user) return
     try {
-      const resp = await fetch(`${API_BASE_URL}/rooms/my-inquiries/${user.id}`)
-      const data = await resp.json()
-      if (resp.ok) setUserInquiries(data.inquiries)
-    } catch (err) {
-      console.error('Fetch inquiries error', err)
+      const response = await fetch(`${API_BASE_URL}/admin/inquiries/user/${user.id}`)
+      if (response.ok) {
+        const data = await response.json()
+        setUserInquiries(data)
+      }
+    } catch (error) {
+      console.error('Fetch inquiries error', error)
+    }
+  }
+
+  const fetchUserBills = async () => {
+    if (!user) return
+    try {
+      const response = await fetch(`${API_BASE_URL}/premium/bills/${user.id}`)
+      if (response.ok) {
+        const data = await response.json()
+        setUserBills(data)
+      }
+    } catch (error) {
+      console.error('Fetch bills error', error)
+    }
+  }
+
+  const handleActivateBill = async (billId: number) => {
+    if (!user) return
+    try {
+      setIsPremiumLoading(true)
+      const response = await fetch(`${API_BASE_URL}/premium/activate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ billId, userId: user.id })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setToast({ text: data.message, type: 'success' })
+        // Refresh user data to show premium status
+        const updatedUser = {
+          ...user,
+          isPremium: true,
+          premiumPlan: data.planType,
+          premiumUntil: data.expiresAt
+        }
+        setUser(updatedUser)
+        localStorage.setItem('shelter_user', JSON.stringify(updatedUser))
+        fetchUserBills()
+      } else {
+        const error = await response.json()
+        setToast({ text: error.message || 'Activation failed', type: 'error' })
+      }
+    } catch (error) {
+      console.error('Activation error', error)
+      setToast({ text: 'Activation failed', type: 'error' })
+    } finally {
+      setIsPremiumLoading(false)
     }
   }
 
@@ -734,7 +802,9 @@ function App() {
       })
       const data = await resp.json()
       if (resp.ok) {
-        setUser({ ...user!, ...data.user })
+        const updatedUser = { ...user!, ...data.user }
+        setUser(updatedUser)
+        localStorage.setItem('shelter_user', JSON.stringify(updatedUser))
         showToast('Profile updated successfully!')
         closeModal()
       } else {
@@ -1000,7 +1070,7 @@ function App() {
     if (!user) return
     setLoadingMessages(true)
     try {
-      const url = roomId 
+      const url = roomId
         ? `${API_BASE_URL}/messages/conversation/${otherUserId}?userId=${user.id}&roomId=${roomId}`
         : `${API_BASE_URL}/messages/conversation/${otherUserId}?userId=${user.id}`
       const response = await fetch(url)
@@ -1092,7 +1162,7 @@ function App() {
     try {
       const response = await fetch(`${API_BASE_URL}/messages/conversation/${conversation.other_user_id}/favorite?userId=${user.id}`, {
         method: 'PATCH',
-        headers: {'Content-Type':'application/json'},
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ favorite: !conversation.is_favorite })
       })
       if (response.ok) {
@@ -1541,7 +1611,11 @@ function App() {
                   <div className="premium-badge-large">👑</div>
                   <h1 className="admin-title">Hello, Premium Member!</h1>
                   <p className="premium-subtitle">
-                    Your {user.premiumPlan || 'active'} plan is valid until {user.premiumUntil ? new Date(user.premiumUntil).toLocaleDateString() : 'N/A'}.
+                    Your {{
+                      'day': '24 Hours',
+                      'week': '7 Days',
+                      'month': '1 Month'
+                    }[user.premiumPlan as 'day' | 'week' | 'month'] || user.premiumPlan || 'active'} plan is valid until {user.premiumUntil ? new Date(user.premiumUntil).toLocaleDateString() : 'N/A'}.
                   </p>
                 </div>
 
@@ -1582,7 +1656,7 @@ function App() {
 
                 <div className="premium-plans-container">
                   <div className="premium-plan-card">
-                    <div className="plan-name">Scout</div>
+                    <div className="plan-name">24 Hours</div>
                     <div className="plan-price">Rs 99<span>/day</span></div>
                     <ul className="plan-features">
                       <li>24h Premium Status</li>
@@ -1596,12 +1670,12 @@ function App() {
                       onClick={() => handlePurchasePremium('day')}
                       disabled={isPremiumLoading}
                     >
-                      {isPremiumLoading ? 'Processing...' : 'Get Scout'}
+                      {isPremiumLoading ? 'Processing...' : 'Get 24 Hours'}
                     </button>
                   </div>
 
                   <div className="premium-plan-card highlighted">
-                    <div className="plan-name">Explorer</div>
+                    <div className="plan-name">7 Days</div>
                     <div className="plan-price">Rs 499<span>/week</span></div>
                     <ul className="plan-features">
                       <li>7 Days Premium Status</li>
@@ -1615,12 +1689,12 @@ function App() {
                       onClick={() => handlePurchasePremium('week')}
                       disabled={isPremiumLoading}
                     >
-                      {isPremiumLoading ? 'Processing...' : 'Get Explorer'}
+                      {isPremiumLoading ? 'Processing...' : 'Get 7 Days'}
                     </button>
                   </div>
 
                   <div className="premium-plan-card">
-                    <div className="plan-name">Resident</div>
+                    <div className="plan-name">1 Month</div>
                     <div className="plan-price">Rs 1499<span>/month</span></div>
                     <ul className="plan-features">
                       <li>30 Days Premium Status</li>
@@ -1634,7 +1708,7 @@ function App() {
                       onClick={() => handlePurchasePremium('month')}
                       disabled={isPremiumLoading}
                     >
-                      {isPremiumLoading ? 'Processing...' : 'Get Resident'}
+                      {isPremiumLoading ? 'Processing...' : 'Get 1 Month'}
                     </button>
                   </div>
                 </div>
@@ -2252,10 +2326,19 @@ function App() {
         activeModal && (
           <div className="auth-modal" role="dialog" aria-modal="true">
             <div className="auth-modal__backdrop" onClick={closeModal} />
-            <section className={`glass-card auth-panel auth-modal__card ${activeModal === 'account' ? 'account-modal-wide' : ''}`}>
-              <button className="modal-close" onClick={closeModal} aria-label="Close dialog">
-                ×
-              </button>
+            <section className={`glass-card auth-panel auth-modal__card ${activeModal === 'account' ? (isAccountMaximized ? 'account-modal-maximized' : 'account-modal-wide') : ''}`}>
+              <div className="modal-header-actions">
+                <button
+                  className="modal-maximize-btn"
+                  onClick={() => setIsAccountMaximized(!isAccountMaximized)}
+                  title={isAccountMaximized ? "Minimize" : "Maximize"}
+                >
+                  {isAccountMaximized ? "❐" : "⬜"}
+                </button>
+                <button className="modal-close" onClick={closeModal} aria-label="Close dialog">
+                  ×
+                </button>
+              </div>
               {activeModal === 'signup' ? (
                 <>
                   <header>
@@ -2450,6 +2533,12 @@ function App() {
                         onClick={() => { setAccountTab('incoming'); fetchOwnerBookings(); }}
                       >
                         <span className="pro-nav-icon">📑</span> Incoming Bookings
+                      </button>
+                      <button
+                        className={`pro-nav-item ${accountTab === 'billings' ? 'active' : ''}`}
+                        onClick={() => { setAccountTab('billings'); fetchUserBills(); }}
+                      >
+                        <span className="pro-nav-icon">📜</span> Billings & Plans
                       </button>
                     </nav>
                   </aside>
@@ -2679,6 +2768,59 @@ function App() {
                                     <p style={{ margin: 0, fontSize: '0.9rem', fontStyle: 'italic', color: '#cbd5e1' }}>"{booking.special_requests}"</p>
                                   </div>
                                 )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {accountTab === 'billings' && (
+                      <div className="pro-section">
+                        <header className="pro-section-header">
+                          <h2>Billings & History</h2>
+                          <p>Manage your manual activations and view past transactions</p>
+                        </header>
+                        {userBills.length === 0 ? (
+                          <div className="pro-empty-state">
+                            <span className="pro-empty-icon">📜</span>
+                            <p>No billing records found. Purchase a plan to see it here.</p>
+                          </div>
+                        ) : (
+                          <div className="pro-bill-list">
+                            {userBills.map(bill => (
+                              <div key={bill.id} className={`pro-bill-card ${bill.is_activated ? 'activated' : ''}`}>
+                                <div className="pro-bill-main">
+                                  <div className="pro-bill-info">
+                                    <div className="pro-bill-title-row">
+                                      <h4>Premium {bill.plan_type === 'day' ? '24 Hours' : bill.plan_type === 'week' ? '7 Days' : '1 Month'} Plan</h4>
+                                      <span className={`pro-status-chip ${bill.is_activated ? 'status-active' : 'status-pending'}`}>
+                                        {bill.is_activated ? 'Activated' : 'Wait for Activation'}
+                                      </span>
+                                    </div>
+                                    <p className="pro-bill-meta">
+                                      <span>💰 Rs {bill.amount}</span>
+                                      <span>📅 Paid: {new Date(bill.paid_at).toLocaleString()}</span>
+                                    </p>
+                                    {bill.is_activated && (
+                                      <p className="pro-bill-activation-meta">
+                                        <span>🚀 Activated: {new Date(bill.activated_at).toLocaleString()}</span>
+                                        <span className="pro-expiry">⌛ Expires: {new Date(bill.expires_at).toLocaleString()}</span>
+                                      </p>
+                                    )}
+                                  </div>
+                                  {!bill.is_activated && (
+                                    <button
+                                      className="pro-activate-btn"
+                                      onClick={() => handleActivateBill(bill.id)}
+                                      disabled={isPremiumLoading}
+                                    >
+                                      {isPremiumLoading ? 'Activating...' : 'Activate Plan'}
+                                    </button>
+                                  )}
+                                </div>
+                                <div className="pro-bill-footer">
+                                  <code>ID: {bill.transaction_uuid}</code>
+                                </div>
                               </div>
                             ))}
                           </div>
