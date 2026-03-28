@@ -2467,12 +2467,24 @@ blockquote footer {
 .modal-header-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 1rem;
   padding: 0.5rem;
   position: absolute;
   top: 10px;
   right: 20px;
   z-index: 10002;
+}
+
+.modal-header-actions .modal-close {
+  position: static !important;
+  top: auto;
+  right: auto;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .modal-maximize-btn {

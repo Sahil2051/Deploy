@@ -219,6 +219,34 @@ router.get('/my-inquiries/:ownerId', async (req, res) => {
   }
 })
 
+// Get inquiries sent by a user (for sender's account history)
+router.get('/sent-inquiries/:userId', async (req, res) => {
+  const { userId } = req.params
+
+  try {
+    const [userRows] = await db.execute('SELECT email FROM users WHERE id = ?', [userId])
+    if (userRows.length === 0) {
+      return res.status(404).json({ message: 'User not found.' })
+    }
+
+    const senderEmail = userRows[0].email
+
+    const [rows] = await db.execute(
+      `SELECT m.*, r.title as room_title, r.owner_name as room_owner_name
+       FROM messages m
+       JOIN rooms r ON m.room_id = r.id
+       WHERE m.sender_email = ?
+       ORDER BY m.created_at DESC`,
+      [senderEmail]
+    )
+
+    return res.json({ inquiries: rows })
+  } catch (error) {
+    console.error('Get sent inquiries error', error)
+    return res.status(500).json({ message: 'Failed to fetch sent inquiries.' })
+  }
+})
+
 // Get nearby rooms (Haversine Formula) - Premium Only
 router.get('/nearby', async (req, res) => {
   const { lat, lng, radius = 10, userId } = req.query // radius in km

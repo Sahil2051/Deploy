@@ -17,7 +17,16 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 })
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000/api'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:5000/api'
+const FALLBACK_API_BASE_URL = import.meta.env.VITE_FALLBACK_API_BASE_URL ?? 'http://127.0.0.1:5000/api'
+const LOCALHOST_API_BASE_URL = 'http://localhost:5000/api'
+
+const toHealthUrl = (apiBaseUrl: string) => {
+  return apiBaseUrl.endsWith('/api') ? `${apiBaseUrl.slice(0, -4)}/health` : `${apiBaseUrl}/health`
+}
+
+const PRIMARY_HEALTH_URL = toHealthUrl(API_BASE_URL)
+const FALLBACK_HEALTH_URL = toHealthUrl(FALLBACK_API_BASE_URL)
 
 type User = {
   id: number
@@ -119,6 +128,7 @@ interface UserInquiry {
   id: number
   room_id: number
   room_title: string
+  room_owner_name?: string
   sender_name: string
   sender_email: string
   sender_phone: string | null
@@ -202,8 +212,10 @@ function App() {
   const [myBookings, setMyBookings] = useState<Booking[]>([])
   const [ownerBookings, setOwnerBookings] = useState<Booking[]>([])
   const [accountTab, setAccountTab] = useState<'profile' | 'inquiries' | 'bookings' | 'incoming' | 'billings'>('profile')
+  const [inquiryView, setInquiryView] = useState<'sent' | 'received'>('sent')
   const [bookingLoading, setBookingLoading] = useState(false)
   const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline'>('checking')
 
   // Messaging state
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -218,12 +230,94 @@ function App() {
     setToast({ text, type })
     setTimeout(() => setToast(null), 4000)
   }
+
+  const parseApiPayload = async (response: Response) => {
+    const contentType = response.headers.get('content-type') || ''
+    if (contentType.includes('application/json')) {
+      try {
+        return await response.json()
+      } catch {
+        return {}
+      }
+    }
+
+    const text = await response.text()
+    return text ? { message: text } : {}
+  }
+
+  const fetchWithProxyFallback = async (path: string, init?: RequestInit) => {
+    const candidates = [API_BASE_URL, '/api', FALLBACK_API_BASE_URL, LOCALHOST_API_BASE_URL]
+    const uniqueCandidates = candidates.filter((base, index) => candidates.indexOf(base) === index)
+
+    let lastError: unknown = null
+    const failures: string[] = []
+    for (const baseUrl of uniqueCandidates) {
+      try {
+        return await fetch(`${baseUrl}${path}`, init)
+      } catch (error) {
+        lastError = error
+        const reason = error instanceof Error ? error.message : String(error)
+        failures.push(`${baseUrl}${path} -> ${reason}`)
+      }
+    }
+
+    if (failures.length > 0) {
+      throw new Error(`All API endpoints failed. ${failures.join(' | ')}`)
+    }
+
+    throw lastError ?? new TypeError('All API endpoints failed')
+  }
+
+  const getNetworkErrorMessage = (error: unknown) => {
+    if (error instanceof Error) {
+      return error.message
+    }
+    if (error instanceof TypeError) {
+      return 'Cannot reach backend API. Ensure backend server is running.'
+    }
+    return 'Network error'
+  }
+
   const [showLoginPassword, setShowLoginPassword] = useState(false)
   const [showSignupPassword, setShowSignupPassword] = useState(false)
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
   const [nearbyRooms, setNearbyRooms] = useState<Room[]>([])
   const [isPremiumLoading, setIsPremiumLoading] = useState(false)
   const [nearbyRadius] = useState(10) // 10km radius
+
+  useEffect(() => {
+    let isMounted = true
+
+    const checkBackendHealth = async () => {
+      try {
+        const primaryResponse = await fetch(PRIMARY_HEALTH_URL)
+        if (!primaryResponse.ok) {
+          throw new Error('Primary health check failed')
+        }
+        if (isMounted) setBackendStatus('online')
+        return
+      } catch {
+        try {
+          const fallbackResponse = await fetch(FALLBACK_HEALTH_URL)
+          if (!fallbackResponse.ok) {
+            throw new Error('Fallback health check failed')
+          }
+          if (isMounted) setBackendStatus('online')
+          return
+        } catch {
+          if (isMounted) setBackendStatus('offline')
+        }
+      }
+    }
+
+    checkBackendHealth()
+    const timerId = window.setInterval(checkBackendHealth, 15000)
+
+    return () => {
+      isMounted = false
+      window.clearInterval(timerId)
+    }
+  }, [])
 
   // Geolocation tracking
   useEffect(() => {
@@ -285,10 +379,8 @@ function App() {
       })
 
       if (!billRes.ok) {
-        throw new Error('Failed to generate bill record.')
+        console.error('Failed to generate bill record silently.')
       }
-
-      showToast('Bill generated! Check your account billings page.', 'success')
 
       // 2. eSewa Initiation (for show)
       const res = await fetch(`${API_BASE_URL}/premium/initiate`, {
@@ -722,16 +814,22 @@ function App() {
     }
   }
 
-  const fetchUserInquiries = async () => {
+  const fetchUserInquiries = async (view: 'sent' | 'received' = inquiryView) => {
     if (!user) return
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/inquiries/user/${user.id}`)
+      const endpoint = view === 'received'
+        ? `/rooms/my-inquiries/${user.id}`
+        : `/rooms/sent-inquiries/${user.id}`
+      const response = await fetchWithProxyFallback(endpoint)
       if (response.ok) {
         const data = await response.json()
-        setUserInquiries(data)
+        setUserInquiries(data.inquiries || [])
+      } else {
+        setUserInquiries([])
       }
     } catch (error) {
       console.error('Fetch inquiries error', error)
+      setUserInquiries([])
     }
   }
 
@@ -795,12 +893,12 @@ function App() {
     }
 
     try {
-      const resp = await fetch(`${API_BASE_URL}/auth/profile`, {
+      const resp = await fetchWithProxyFallback('/auth/profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       })
-      const data = await resp.json()
+      const data = await parseApiPayload(resp)
       if (resp.ok) {
         const updatedUser = { ...user!, ...data.user }
         setUser(updatedUser)
@@ -811,14 +909,15 @@ function App() {
         showToast(data.message || 'Update failed', 'error')
       }
     } catch (err) {
-      showToast('Network error', 'error')
+      showToast(getNetworkErrorMessage(err), 'error')
     }
   }
 
   const handleSendInquiry = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!selectedRoom) return
-    const formData = new FormData(e.currentTarget)
+    const form = e.currentTarget
+    const formData = new FormData(form)
     const payload = {
       senderName: formData.get('senderName'),
       senderEmail: formData.get('senderEmail'),
@@ -827,20 +926,20 @@ function App() {
     }
 
     try {
-      const resp = await fetch(`${API_BASE_URL}/rooms/${selectedRoom.id}/inquire`, {
+      const resp = await fetchWithProxyFallback(`/rooms/${selectedRoom.id}/inquire`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       })
-      const data = await resp.json()
+      const data = await parseApiPayload(resp)
       if (resp.ok) {
         showToast('Inquiry sent successfully!')
-        e.currentTarget.reset()
+        form.reset()
       } else {
         showToast(data.message || 'Failed to send inquiry', 'error')
       }
     } catch (err) {
-      showToast('Network error', 'error')
+      showToast(getNetworkErrorMessage(err), 'error')
     }
   }
 
@@ -866,12 +965,12 @@ function App() {
     }
 
     try {
-      const resp = await fetch(`${API_BASE_URL}/bookings`, {
+      const resp = await fetchWithProxyFallback('/bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       })
-      const data = await resp.json()
+      const data = await parseApiPayload(resp)
       if (resp.ok) {
         showToast(data.message || 'Room booked successfully!')
         setBookingData(initialBookingState)
@@ -880,7 +979,7 @@ function App() {
         showToast(data.message || 'Booking failed', 'error')
       }
     } catch (err) {
-      showToast('Network error', 'error')
+      showToast(getNetworkErrorMessage(err), 'error')
     } finally {
       setBookingLoading(false)
     }
@@ -1468,10 +1567,25 @@ function App() {
 
                 <div className="inquiry-form-card">
                   <h4 style={{ marginBottom: '1rem', color: '#f8fafc' }}>Send Inquiry</h4>
+                  <p
+                    style={{
+                      marginTop: 0,
+                      marginBottom: '0.75rem',
+                      fontSize: '0.85rem',
+                      color:
+                        backendStatus === 'online'
+                          ? '#22c55e'
+                          : backendStatus === 'offline'
+                            ? '#ef4444'
+                            : '#94a3b8',
+                    }}
+                  >
+                    Backend status: {backendStatus === 'checking' ? 'Checking...' : backendStatus}
+                  </p>
                   <form onSubmit={handleSendInquiry} className="auth-form">
-                    <input type="text" name="senderName" placeholder="Your Name" required className="auth-input" />
-                    <input type="email" name="senderEmail" placeholder="Your Email" required className="auth-input" />
-                    <input type="tel" name="senderPhone" placeholder="Your Phone (Optional)" className="auth-input" />
+                    <input type="text" name="senderName" defaultValue={user?.fullName ?? ''} placeholder="Your Name" required className="auth-input" />
+                    <input type="email" name="senderEmail" defaultValue={user?.email ?? ''} placeholder="Your Email" required className="auth-input" />
+                    <input type="tel" name="senderPhone" defaultValue={user?.phoneNumber ?? ''} placeholder="Your Phone (Optional)" className="auth-input" />
                     <textarea name="message" placeholder="I'm interested in this room..." required className="auth-input" style={{ minHeight: '80px', padding: '0.8rem' }} />
                     <button type="submit" className="primary-cta compact" style={{ width: '100%' }}>Send Message</button>
                   </form>
@@ -1578,7 +1692,7 @@ function App() {
                         )}
                       </span>
                     </span>
-                    <button className="account-btn" onClick={() => { setActiveModal('account'); fetchUserInquiries(); }}>
+                    <button className="account-btn" onClick={() => { setActiveModal('account'); setInquiryView('sent'); fetchUserInquiries('sent'); }}>
                       👤 Account
                     </button>
                     <button className="ghost-cta mini" onClick={handleLogout}>
@@ -2328,13 +2442,15 @@ function App() {
             <div className="auth-modal__backdrop" onClick={closeModal} />
             <section className={`glass-card auth-panel auth-modal__card ${activeModal === 'account' ? (isAccountMaximized ? 'account-modal-maximized' : 'account-modal-wide') : ''}`}>
               <div className="modal-header-actions">
-                <button
-                  className="modal-maximize-btn"
-                  onClick={() => setIsAccountMaximized(!isAccountMaximized)}
-                  title={isAccountMaximized ? "Minimize" : "Maximize"}
-                >
-                  {isAccountMaximized ? "❐" : "⬜"}
-                </button>
+                {activeModal === 'account' && (
+                  <button
+                    className="modal-maximize-btn"
+                    onClick={() => setIsAccountMaximized(!isAccountMaximized)}
+                    title={isAccountMaximized ? "Minimize" : "Maximize"}
+                  >
+                    {isAccountMaximized ? "❐" : "⬜"}
+                  </button>
+                )}
                 <button className="modal-close" onClick={closeModal} aria-label="Close dialog">
                   ×
                 </button>
@@ -2518,7 +2634,7 @@ function App() {
                       </button>
                       <button
                         className={`pro-nav-item ${accountTab === 'inquiries' ? 'active' : ''}`}
-                        onClick={() => { setAccountTab('inquiries'); fetchUserInquiries(); }}
+                        onClick={() => { setAccountTab('inquiries'); fetchUserInquiries(inquiryView); }}
                       >
                         <span className="pro-nav-icon">✉️</span> Messages & Inquiries
                       </button>
@@ -2609,12 +2725,30 @@ function App() {
                       <div className="pro-section">
                         <header className="pro-section-header">
                           <h2>Recent Inquiries</h2>
-                          <p>Messages you've sent regarding rooms</p>
+                          <p>{inquiryView === 'sent' ? "Messages you've sent regarding rooms" : 'Inquiries received on your rooms'}</p>
                         </header>
+                        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+                          <button
+                            className="ghost-cta mini"
+                            onClick={() => { setInquiryView('sent'); fetchUserInquiries('sent'); }}
+                            type="button"
+                            style={{ opacity: inquiryView === 'sent' ? 1 : 0.75 }}
+                          >
+                            Sent
+                          </button>
+                          <button
+                            className="ghost-cta mini"
+                            onClick={() => { setInquiryView('received'); fetchUserInquiries('received'); }}
+                            type="button"
+                            style={{ opacity: inquiryView === 'received' ? 1 : 0.75 }}
+                          >
+                            Received
+                          </button>
+                        </div>
                         {userInquiries.length === 0 ? (
                           <div className="pro-empty-state">
                             <span className="pro-empty-icon">📂</span>
-                            <p>You haven't sent any inquiries yet.</p>
+                            <p>{inquiryView === 'sent' ? "You haven't sent any inquiries yet." : "No inquiries received for your rooms yet."}</p>
                           </div>
                         ) : (
                           <div className="pro-inquiry-list">
@@ -2628,7 +2762,11 @@ function App() {
                                   <p className="pro-message-bubble">"{inq.message}"</p>
                                 </div>
                                 <div className="pro-inquiry-footer">
-                                  <span>Sent as: <strong>{inq.sender_name}</strong></span>
+                                  {inquiryView === 'sent' ? (
+                                    <span>Sent as: <strong>{inq.sender_name}</strong></span>
+                                  ) : (
+                                    <span>From: <strong>{inq.sender_name}</strong> ({inq.sender_email})</span>
+                                  )}
                                 </div>
                               </div>
                             ))}
@@ -2996,13 +3134,6 @@ function App() {
                   </form>
                 </>
               )}
-              <button
-                className="modal-close"
-                onClick={closeModal}
-                aria-label="Close modal"
-              >
-                ×
-              </button>
             </section>
           </div>
         )
