@@ -5,7 +5,7 @@ const router = express.Router();
 
 // 1. Create a Booking
 router.post('/', async (req, res) => {
-    const { userId, roomId, checkInDate, checkOutDate, guestsCount, totalPrice, specialRequests } = req.body;
+    const { userId, roomId, checkInDate, checkOutDate, guestsCount, totalPrice, specialRequests, paymentTransactionUuid } = req.body;
 
     if (!userId || !roomId || !checkInDate || !checkOutDate || !guestsCount || !totalPrice) {
         return res.status(400).json({ message: 'Missing required booking fields.' });
@@ -17,6 +17,21 @@ router.post('/', async (req, res) => {
     }
 
     try {
+        let paymentRows = []
+        if (paymentTransactionUuid) {
+            [paymentRows] = await db.execute(
+                `SELECT id
+                 FROM feature_payments
+                 WHERE transaction_uuid = ?
+                   AND user_id = ?
+                   AND payment_for = 'booking'
+                   AND is_verified = 1
+                   AND is_consumed = 0
+                 LIMIT 1`,
+                [paymentTransactionUuid, userId]
+            )
+        }
+
         // A. Check if room exists and get owner info
         const [roomRows] = await db.execute('SELECT owner_id, is_available FROM rooms WHERE id = ?', [roomId]);
         if (roomRows.length === 0) {
@@ -60,6 +75,16 @@ router.post('/', async (req, res) => {
             INSERT INTO booking_logs (booking_id, action, performed_by, notes)
             VALUES (?, 'created', ?, 'User initiated a booking')
         `, [bookingId, userId]);
+
+        if (paymentRows.length > 0) {
+            await db.execute(
+                `UPDATE feature_payments
+                 SET is_consumed = 1,
+                     consumed_at = UTC_TIMESTAMP()
+                 WHERE id = ?`,
+                [paymentRows[0].id]
+            )
+        }
 
         return res.status(201).json({
             message: 'Booking request sent successfully! Waiting for approval.',

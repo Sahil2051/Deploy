@@ -95,6 +95,7 @@ router.post('/', upload.array('photos', 10), async (req, res) => {
     contactPhone,
     latitude,
     longitude,
+    paymentTransactionUuid,
   } = req.body || {}
 
   if (!ownerId || !ownerName || !title || !address || !pricePerMonth) {
@@ -102,6 +103,21 @@ router.post('/', upload.array('photos', 10), async (req, res) => {
   }
 
   try {
+    let paymentRows = []
+    if (paymentTransactionUuid) {
+      [paymentRows] = await db.execute(
+        `SELECT id
+         FROM feature_payments
+         WHERE transaction_uuid = ?
+           AND user_id = ?
+           AND payment_for = 'room_registration'
+           AND is_verified = 1
+           AND is_consumed = 0
+         LIMIT 1`,
+        [paymentTransactionUuid, ownerId]
+      )
+    }
+
     // Process photos
     const photoPaths = req.files ? req.files.map(file => `/uploads/${file.filename}`) : []
     const photosJson = JSON.stringify(photoPaths)
@@ -141,6 +157,16 @@ router.post('/', upload.array('photos', 10), async (req, res) => {
     )
 
     const [newRoom] = await db.execute('SELECT * FROM rooms WHERE id = ?', [result.insertId])
+
+    if (paymentRows.length > 0) {
+      await db.execute(
+        `UPDATE feature_payments
+         SET is_consumed = 1,
+             consumed_at = UTC_TIMESTAMP()
+         WHERE id = ?`,
+        [paymentRows[0].id]
+      )
+    }
 
     return res.status(201).json({
       message: 'Room registered successfully.',

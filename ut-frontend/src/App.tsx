@@ -1,10 +1,5 @@
 import React, { useState, useEffect, type ChangeEvent, type FormEvent } from 'react'
-import {
-  Search, MapPin, Calendar, Users, Star, Shield, Clock, Plus, Trash2, Edit2, LogOut,
-  User as UserIcon, BookOpen, Check, X, Menu, Info, Heart, Share2, ArrowRight,
-  ExternalLink, MessageCircle, Phone, Mail, Award, Zap, Navigation, Globe, Map,
-  Crown, HelpCircle
-} from 'lucide-react'
+import { MessageCircle } from 'lucide-react'
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
@@ -162,6 +157,11 @@ type Conversation = {
   is_favorite?: boolean
 }
 
+type CelebrationPayload = {
+  title: string
+  subtitle: string
+}
+
 type AdminUser = {
   id: number
   fullName: string
@@ -222,9 +222,11 @@ function App() {
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState('')
+  const [newChatQuery, setNewChatQuery] = useState('')
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [sendingMessage, setSendingMessage] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
+  const [celebration, setCelebration] = useState<CelebrationPayload | null>(null)
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
     setToast({ text, type })
@@ -276,6 +278,99 @@ function App() {
       return 'Cannot reach backend API. Ensure backend server is running.'
     }
     return 'Network error'
+  }
+
+  const launchCelebration = (title: string, subtitle: string) => {
+    setCelebration({ title, subtitle })
+    window.setTimeout(() => setCelebration(null), 4200)
+  }
+
+  const submitEsewaForm = (params: Record<string, string | number>) => {
+    const form = document.createElement('form')
+    form.setAttribute('method', 'POST')
+    form.setAttribute('action', 'https://rc-epay.esewa.com.np/api/epay/main/v2/form')
+
+    for (const [key, value] of Object.entries(params)) {
+      const input = document.createElement('input')
+      input.setAttribute('type', 'hidden')
+      input.setAttribute('name', key)
+      input.setAttribute('value', String(value))
+      form.appendChild(input)
+    }
+
+    document.body.appendChild(form)
+    form.submit()
+  }
+
+  const startBookingPayment = async (payload: {
+    userId: number
+    roomId: number
+    checkInDate: string
+    checkOutDate: string
+    guestsCount: number
+    totalPrice: number
+    specialRequests: string
+  }) => {
+    const response = await fetch(`${API_BASE_URL}/payments/booking/initiate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: payload.userId,
+        roomId: payload.roomId,
+        totalAmount: payload.totalPrice,
+        successUrl: window.location.origin
+      })
+    })
+
+    const paymentParams = await parseApiPayload(response)
+    if (!response.ok) {
+      throw new Error(paymentParams.message || 'Failed to initiate booking payment.')
+    }
+
+    submitEsewaForm({
+      amount: paymentParams.amount,
+      tax_amount: paymentParams.tax_amount,
+      total_amount: paymentParams.total_amount,
+      transaction_uuid: paymentParams.transaction_uuid,
+      product_code: paymentParams.product_code,
+      product_service_charge: paymentParams.psc,
+      product_delivery_charge: paymentParams.pdc,
+      success_url: paymentParams.success_url,
+      failure_url: paymentParams.failure_url,
+      signed_field_names: 'total_amount,transaction_uuid,product_code',
+      signature: paymentParams.signature,
+    })
+  }
+
+  const startRoomRegistrationPayment = async () => {
+    if (!user) {
+      throw new Error('Please login to continue.')
+    }
+
+    const response = await fetch(`${API_BASE_URL}/payments/room/initiate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: user.id, amount: 99, successUrl: window.location.origin })
+    })
+
+    const paymentParams = await parseApiPayload(response)
+    if (!response.ok) {
+      throw new Error(paymentParams.message || 'Failed to initiate room registration payment.')
+    }
+
+    submitEsewaForm({
+      amount: paymentParams.amount,
+      tax_amount: paymentParams.tax_amount,
+      total_amount: paymentParams.total_amount,
+      transaction_uuid: paymentParams.transaction_uuid,
+      product_code: paymentParams.product_code,
+      product_service_charge: paymentParams.psc,
+      product_delivery_charge: paymentParams.pdc,
+      success_url: paymentParams.success_url,
+      failure_url: paymentParams.failure_url,
+      signed_field_names: 'total_amount,transaction_uuid,product_code',
+      signature: paymentParams.signature,
+    })
   }
 
   const [showLoginPassword, setShowLoginPassword] = useState(false)
@@ -451,39 +546,68 @@ function App() {
     fetchAllRooms()
   }, [user])
 
-  // Split out eSewa Callback to be more robust
+  // Handle eSewa callback for premium, room registration fee, and booking fee.
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search)
     const paymentStatus = urlParams.get('payment')
     const paymentData = urlParams.get('data')
+    const paymentContext = urlParams.get('context')
 
-    // Debug log to see what we're getting from eSewa
     if (paymentStatus || paymentData) {
-      console.log('eSewa Redirect Detected:', { paymentStatus, hasData: !!paymentData })
+      console.log('eSewa Redirect Detected:', { paymentStatus, paymentContext, hasData: !!paymentData })
     }
 
     if (paymentStatus === 'success' && paymentData) {
       const runVerification = async () => {
-        // If user is not loaded yet, wait. Effect will re-run when user changes.
         if (!user) {
           console.log('Verification delayed: User state not ready.')
           return
         }
 
         setIsPremiumLoading(true)
-        console.log('Starting Backend Verification for User:', user.id)
 
         try {
-          const res = await fetch(`${API_BASE_URL}/premium/verify`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ data: paymentData })
-          })
+          if (paymentContext === 'booking') {
+            const verifyResp = await fetch(`${API_BASE_URL}/payments/verify`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ data: paymentData, context: 'booking' })
+            })
+            const verifyPayload = await parseApiPayload(verifyResp)
 
-          const result = await res.json()
+            if (!verifyResp.ok) {
+              throw new Error(verifyPayload.message || 'Booking payment verification failed.')
+            }
 
-          if (res.ok) {
-            console.log('Verification Success:', result)
+            launchCelebration('Booking Congrats', `You booked ${selectedRoom?.title || 'your selected room'} successfully.`)
+            showToast('Booking request already sent successfully.')
+          } else if (paymentContext === 'room-registration') {
+            const verifyResp = await fetch(`${API_BASE_URL}/payments/verify`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ data: paymentData, context: 'room-registration' })
+            })
+            const verifyPayload = await parseApiPayload(verifyResp)
+
+            if (!verifyResp.ok) {
+              throw new Error(verifyPayload.message || 'Room registration fee verification failed.')
+            }
+
+            launchCelebration('Room Registered Congrats', 'Your room listing is already submitted successfully.')
+            showToast('Room registration was already completed successfully.')
+          } else {
+            const res = await fetch(`${API_BASE_URL}/premium/verify`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ data: paymentData })
+            })
+
+            const result = await res.json()
+
+            if (!res.ok) {
+              throw new Error(result.message || 'Premium verification failed.')
+            }
+
             const updatedUser = {
               ...user,
               isPremium: true,
@@ -492,30 +616,33 @@ function App() {
             }
             setUser(updatedUser)
             localStorage.setItem('shelter_user', JSON.stringify(updatedUser))
-
-            // Critical: Force refresh of all rooms to unlock Nearby/Map instantly
             fetchAllRooms()
-
-            alert(result.message || "Premium activated successfully!")
-            window.history.replaceState({}, document.title, "/")
-          } else {
-            console.error('Verification Failed:', result)
-            alert(result.message || "Verification failed. Please contact support.")
-            window.history.replaceState({}, document.title, "/")
+            launchCelebration('Premium Activated', `${user.fullName}, your premium access is now live.`)
+            showToast(result.message || 'Premium activated successfully!')
           }
         } catch (error) {
           console.error("Verification error:", error)
-          alert("Network error during verification. We'll try again automatically or you can sync status manually.")
+          showToast(error instanceof Error ? error.message : 'Payment verification failed.', 'error')
         } finally {
+          window.history.replaceState({}, document.title, window.location.pathname)
           setIsPremiumLoading(false)
         }
       }
       runVerification()
+    } else if (paymentStatus === 'success') {
+      if (paymentContext === 'booking') {
+        launchCelebration('Booking Congrats', `You booked ${selectedRoom?.title || 'your selected room'} successfully.`)
+        showToast('Booking request already sent successfully.')
+      } else if (paymentContext === 'room-registration') {
+        launchCelebration('Room Registered Congrats', 'Your room listing is already submitted successfully.')
+        showToast('Room registration was already completed successfully.')
+      }
+      window.history.replaceState({}, document.title, window.location.pathname)
     } else if (paymentStatus === 'failure') {
-      alert("Payment failed or was cancelled.")
-      window.history.replaceState({}, document.title, "/")
+      showToast('Payment failed or was cancelled.', 'error')
+      window.history.replaceState({}, document.title, window.location.pathname)
     }
-  }, [user]) // Re-run when user state is initialized
+  }, [user, selectedRoom])
 
   const fetchMyRooms = async () => {
     if (!user) return
@@ -693,6 +820,7 @@ function App() {
       setUser(payload.user)
       localStorage.setItem('shelter_user', JSON.stringify(payload.user))
       setLoginMessage({ type: 'success', text: payload?.message ?? 'Login successful' })
+      launchCelebration('Welcome Aboard', `Welcome ${payload.user?.fullName || 'Explorer'}! Ready for your next shelter mission.`)
       setLoginData(initialLoginState)
       setTimeout(() => {
         closeModal()
@@ -708,7 +836,6 @@ function App() {
     event.preventDefault()
     if (!user) return
 
-    // If on Step 1, just go to Step 2
     if (roomStep === 1) {
       setRoomStep(2)
       return
@@ -754,12 +881,19 @@ function App() {
         throw new Error(payload?.message ?? 'Failed to register room')
       }
 
-      setRoomMessage({ type: 'success', text: payload?.message ?? 'Room registered successfully' })
+      setRoomMessage({ type: 'success', text: 'Redirecting to eSewa gateway...' })
       setRoomData(initialRoomState)
       setRoomPhotos([])
       setRoomStep(1)
       await fetchMyRooms()
       await fetchAllRooms()
+
+      try {
+        await startRoomRegistrationPayment()
+      } catch (paymentError) {
+        console.error('Room showcase payment failed:', paymentError)
+      }
+
       setTimeout(() => {
         closeModal()
       }, 1500)
@@ -975,6 +1109,12 @@ function App() {
         showToast(data.message || 'Room booked successfully!')
         setBookingData(initialBookingState)
         fetchMyBookings()
+
+        try {
+          await startBookingPayment(payload)
+        } catch (paymentError) {
+          console.error('Booking showcase payment failed:', paymentError)
+        }
       } else {
         showToast(data.message || 'Booking failed', 'error')
       }
@@ -1308,6 +1448,43 @@ function App() {
     setCurrentView('messages')
   }
 
+  const handleStartDirectChat = async (targetUser: AdminUser) => {
+    if (!user) {
+      setActiveModal('login')
+      return
+    }
+
+    if (targetUser.id === user.id) {
+      showToast('You cannot message yourself.', 'error')
+      return
+    }
+
+    const existingConversation = conversations.find(
+      conversation => conversation.other_user_id === targetUser.id
+    )
+
+    if (existingConversation) {
+      setSelectedConversation(existingConversation)
+      await fetchMessages(targetUser.id, existingConversation.room_id || undefined)
+    } else {
+      setSelectedConversation({
+        other_user_id: targetUser.id,
+        other_user_name: targetUser.fullName,
+        other_user_email: targetUser.email,
+        room_id: null,
+        room_title: null,
+        last_message_at: new Date().toISOString(),
+        last_message: null,
+        is_from_me: false,
+        unread_count: 0,
+      })
+      setMessages([])
+    }
+
+    setCurrentView('messages')
+    setNewChatQuery('')
+  }
+
   useEffect(() => {
     const adminStatus = localStorage.getItem('shelter_admin')
     if (adminStatus === 'true') {
@@ -1322,10 +1499,24 @@ function App() {
   // Load conversations when messages view is opened
   useEffect(() => {
     if (currentView === 'messages' && user) {
+      if (adminUsers.length === 0) {
+        fetchAdminUsers()
+      }
       fetchConversations()
       fetchUnreadCount()
     }
   }, [currentView, user])
+
+  const filteredUsers = adminUsers.filter(candidate => {
+    const query = newChatQuery.trim().toLowerCase()
+    if (!query) return false
+
+    return (
+      candidate.fullName.toLowerCase().includes(query) ||
+      candidate.email.toLowerCase().includes(query) ||
+      candidate.phoneNumber.toLowerCase().includes(query)
+    )
+  })
 
   // Periodically check for new messages when user is logged in
   useEffect(() => {
@@ -1379,13 +1570,35 @@ function App() {
         </div>
       )}
 
+      {celebration && (
+        <div className="celebration-overlay" role="status" aria-live="polite">
+          <div className="celebration-stars" />
+          <div className="celebration-content">
+            <h2>{celebration.title}</h2>
+            <p>{celebration.subtitle}</p>
+          </div>
+          <div className="celebration-balloons" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className="celebration-fireworks" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
+        </div>
+      )}
+
       {/* Verification Overlay */}
       {isPremiumLoading && (
         <div className="admin-verify-overlay" style={{ zIndex: 10000 }}>
           <div className="admin-verify-card premium-card" style={{ textAlign: 'center' }}>
-            <div className="premium-badge-large" style={{ animation: 'pulse 2s infinite' }}>👑</div>
-            <h2 style={{ color: '#fff', marginBottom: '1rem' }}>Verifying...</h2>
-            <p style={{ color: '#94a3b8' }}>Please wait while we activate your premium experience.</p>
+            <div className="premium-badge-large" style={{ animation: 'pulse 2s infinite' }}>✨</div>
+            <h2 style={{ color: '#fff', marginBottom: '1rem' }}>Verifying payment...</h2>
+            <p style={{ color: '#94a3b8' }}>Please wait while we finalize your transaction.</p>
             <div className="loading-spinner"></div>
           </div>
         </div>
@@ -1593,6 +1806,9 @@ function App() {
 
                 <div className="booking-form-card">
                   <h4 style={{ marginBottom: '1rem', color: '#f8fafc' }}>Book this Room</h4>
+                  <p style={{ marginTop: 0, marginBottom: '0.8rem', color: '#94a3b8', fontSize: '0.86rem' }}>
+                    Booking is submitted immediately. eSewa opens after submit for showcase.
+                  </p>
                   <form onSubmit={handleBookingSubmit} className="auth-form">
                     <label style={{ color: '#94a3b8' }}>
                       <span>Check-in Date</span>
@@ -1837,6 +2053,57 @@ function App() {
           <div className="messages-container" style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
             <div className="messages-header">
               <h1 style={{ color: '#fff', marginBottom: '2rem' }}>Messages</h1>
+            </div>
+
+            <div className="glass-card" style={{ marginBottom: '1.5rem', padding: '1rem 1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+                <div>
+                  <h3 style={{ margin: 0, color: '#fff' }}>Start a new chat</h3>
+                  <p style={{ margin: '0.35rem 0 0', color: '#94a3b8', fontSize: '0.92rem' }}>
+                    Search by name, email, or phone to message any logged-in user.
+                  </p>
+                </div>
+                <div style={{ minWidth: '280px', flex: '1 1 360px' }}>
+                  <input
+                    type="text"
+                    value={newChatQuery}
+                    onChange={(e) => setNewChatQuery(e.target.value)}
+                    placeholder="Search users to message..."
+                    className="auth-input"
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              </div>
+
+              {newChatQuery.trim() && (
+                <div style={{ marginTop: '1rem', display: 'grid', gap: '0.75rem' }}>
+                  {filteredUsers.length > 0 ? filteredUsers.slice(0, 6).map((candidate) => (
+                    <button
+                      key={candidate.id}
+                      type="button"
+                      onClick={() => handleStartDirectChat(candidate)}
+                      className="conversation-item"
+                      style={{
+                        width: '100%',
+                        textAlign: 'left',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        background: 'rgba(255,255,255,0.03)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <div className="conversation-avatar">
+                        {candidate.fullName.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="conversation-content">
+                        <div className="conversation-name">{candidate.fullName}</div>
+                        <div className="conversation-preview">{candidate.email}</div>
+                      </div>
+                    </button>
+                  )) : (
+                    <p style={{ margin: 0, color: '#94a3b8' }}>No users found for that search.</p>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="messages-layout">
@@ -2415,6 +2682,16 @@ function App() {
                         </p>
                         {room.contact_phone && <p className="contact-info">Contact: {room.contact_phone}</p>}
 
+                        {user && user.id !== room.owner_id && (
+                          <button
+                            className="message-owner-btn"
+                            style={{ marginTop: '0.5rem', width: '100%' }}
+                            onClick={() => handleStartChatWithOwner(room)}
+                          >
+                            💬 Message Owner
+                          </button>
+                        )}
+
                         <button
                           className="ghost-cta mini"
                           style={{ marginTop: '0.5rem', width: '100%' }}
@@ -2980,6 +3257,12 @@ function App() {
 
                     {roomStep === 1 && (
                       <div className="form-step-1">
+                        <div className="room-payment-banner">
+                          <strong>Room listing fee: Rs 99</strong>
+                          <span>
+                            Listing is submitted directly. Payment gateway opens after submit for showcase.
+                          </span>
+                        </div>
                         <label>
                           <span>Owner Name *</span>
                           <input

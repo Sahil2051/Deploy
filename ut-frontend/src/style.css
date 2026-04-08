@@ -3607,3 +3607,201 @@ label span {
     height: 60vh;
   }
 }
+
+.room-payment-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.85rem 1rem;
+  margin-bottom: 0.9rem;
+  border-radius: 14px;
+  border: 1px solid rgba(122, 168, 255, 0.35);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(30, 41, 59, 0.78));
+  color: #dbeafe;
+}
+
+.room-payment-banner strong {
+  color: #ffffff;
+  font-size: 0.95rem;
+}
+
+.room-payment-banner span {
+  color: #93c5fd;
+  font-size: 0.83rem;
+}
+
+.celebration-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 35%, rgba(56, 189, 248, 0.2), rgba(2, 6, 23, 0.88) 55%);
+  backdrop-filter: blur(4px);
+  overflow: hidden;
+  animation: celebrationFadeIn 250ms ease;
+}
+
+.celebration-stars {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at 18% 25%, rgba(248, 250, 252, 0.8) 0, rgba(248, 250, 252, 0) 2px),
+    radial-gradient(circle at 72% 14%, rgba(191, 219, 254, 0.9) 0, rgba(191, 219, 254, 0) 1.8px),
+    radial-gradient(circle at 63% 76%, rgba(125, 211, 252, 0.8) 0, rgba(125, 211, 252, 0) 2.2px),
+    radial-gradient(circle at 32% 68%, rgba(255, 255, 255, 0.75) 0, rgba(255, 255, 255, 0) 1.6px);
+  animation: starsPulse 2.2s ease-in-out infinite;
+}
+
+.celebration-content {
+  position: relative;
+  z-index: 3;
+  text-align: center;
+  padding: 1.8rem 2rem;
+  border-radius: 18px;
+  border: 1px solid rgba(147, 197, 253, 0.35);
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.88));
+  box-shadow: 0 20px 45px rgba(2, 6, 23, 0.45);
+}
+
+.celebration-content h2 {
+  margin: 0 0 0.6rem;
+  color: #f8fafc;
+  font-size: clamp(1.4rem, 2.2vw, 2rem);
+}
+
+.celebration-content p {
+  margin: 0;
+  color: #bfdbfe;
+  font-size: 0.95rem;
+}
+
+.celebration-balloons span {
+  position: absolute;
+  bottom: -14%;
+  width: 24px;
+  height: 32px;
+  border-radius: 50% 50% 45% 45%;
+  animation: balloonRise 4.8s linear infinite;
+}
+
+.celebration-balloons span::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 30px;
+  width: 1px;
+  height: 44px;
+  background: rgba(191, 219, 254, 0.65);
+}
+
+.celebration-balloons span:nth-child(1) {
+  left: 8%;
+  background: #60a5fa;
+  animation-delay: 0s;
+}
+
+.celebration-balloons span:nth-child(2) {
+  left: 24%;
+  background: #f59e0b;
+  animation-delay: 0.9s;
+}
+
+.celebration-balloons span:nth-child(3) {
+  left: 74%;
+  background: #22d3ee;
+  animation-delay: 0.4s;
+}
+
+.celebration-balloons span:nth-child(4) {
+  left: 88%;
+  background: #34d399;
+  animation-delay: 1.3s;
+}
+
+.celebration-balloons span:nth-child(5) {
+  left: 58%;
+  background: #f97316;
+  animation-delay: 0.7s;
+}
+
+.celebration-fireworks span {
+  position: absolute;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  border: 2px dashed rgba(125, 211, 252, 0.45);
+  animation: fireworkBurst 1.8s ease-out infinite;
+}
+
+.celebration-fireworks span:nth-child(1) {
+  top: 18%;
+  left: 18%;
+}
+
+.celebration-fireworks span:nth-child(2) {
+  top: 12%;
+  right: 18%;
+  animation-delay: 0.5s;
+}
+
+.celebration-fireworks span:nth-child(3) {
+  bottom: 16%;
+  right: 30%;
+  animation-delay: 1s;
+}
+
+@keyframes celebrationFadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes starsPulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes balloonRise {
+  0% {
+    transform: translateY(0) translateX(0);
+    opacity: 0;
+  }
+
+  12% {
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateY(-130vh) translateX(18px);
+    opacity: 0;
+  }
+}
+
+@keyframes fireworkBurst {
+  0% {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+
+  30% {
+    opacity: 0.9;
+  }
+
+  100% {
+    transform: scale(1.15);
+    opacity: 0;
+  }
+}
