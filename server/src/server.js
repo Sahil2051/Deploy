@@ -1,4 +1,5 @@
-require('dotenv').config()
+const path = require('path')
+require('dotenv').config({ path: path.join(__dirname, '../.env') })
 const express = require('express')
 const cors = require('cors')
 const authRoutes = require('./routes.auth')
@@ -8,8 +9,6 @@ const bookingsRoutes = require('./routes.bookings')
 const premiumRoutes = require('./routes.premium')
 const messagesRoutes = require('./routes.messages')
 const paymentsRoutes = require('./routes.payments')
-
-const path = require('path')
 
 const app = express()
 
@@ -34,5 +33,8 @@ const host = process.env.APP_HOST ?? '0.0.0.0'
 
 app.listen(port, host, () => {
   console.log(`Server listening on http://${host}:${port}`)
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.warn('WARNING: SMTP is not configured. Email OTP and reset features will not work.')
+  }
 })
 

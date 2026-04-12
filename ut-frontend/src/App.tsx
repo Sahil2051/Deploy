@@ -15,6 +15,7 @@ L.Icon.Default.mergeOptions({
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:5000/api'
 const FALLBACK_API_BASE_URL = import.meta.env.VITE_FALLBACK_API_BASE_URL ?? 'http://127.0.0.1:5000/api'
 const LOCALHOST_API_BASE_URL = 'http://localhost:5000/api'
+const VALID_EMAIL_REGEX = /^[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i
 
 const toHealthUrl = (apiBaseUrl: string) => {
   return apiBaseUrl.endsWith('/api') ? `${apiBaseUrl.slice(0, -4)}/health` : `${apiBaseUrl}/health`
@@ -92,6 +93,13 @@ const initialLoginState = {
   credential: '',
   password: '',
 }
+
+const COUNTRY_CODES = [
+  { code: '+977', label: 'Nepal (+977)' },
+  { code: '+91', label: 'India (+91)' },
+  { code: '+1', label: 'USA (+1)' },
+  { code: '+44', label: 'UK (+44)' },
+]
 
 const initialRoomState = {
   ownerName: '',
@@ -200,7 +208,7 @@ function App() {
   const [loadingRooms, setLoadingRooms] = useState(false)
   const [userInquiries, setUserInquiries] = useState<UserInquiry[]>([])
   const [userBills, setUserBills] = useState<any[]>([])
-  const [isAccountMaximized, setIsAccountMaximized] = useState(false)
+  const [isAuthMaximized, setIsAuthMaximized] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [adminMasterPassword, setAdminMasterPassword] = useState('')
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([])
@@ -227,6 +235,26 @@ function App() {
   const [sendingMessage, setSendingMessage] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [celebration, setCelebration] = useState<CelebrationPayload | null>(null)
+  const [signupMethod, setSignupMethod] = useState<'email' | 'phone'>('email')
+  const [signupStep, setSignupStep] = useState<1 | 2>(1)
+  const [signupOtpCode, setSignupOtpCode] = useState('')
+  const [loginMethod, setLoginMethod] = useState<'email' | 'phone'>('email')
+  const [authCountryCode, setAuthCountryCode] = useState('+977')
+  const [isRoomDetailsMaximized, setIsRoomDetailsMaximized] = useState(false)
+  const [changePasswordData, setChangePasswordData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  })
+  const [forgotPasswordData, setForgotPasswordData] = useState({
+    email: '',
+    token: '',
+    newPassword: '',
+    confirmPassword: '',
+  })
+  const [forgotPasswordStep, setForgotPasswordStep] = useState<1 | 2>(1)
+  const [passwordActionMessage, setPasswordActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [passwordActionLoading, setPasswordActionLoading] = useState(false)
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
     setToast({ text, type })
@@ -413,6 +441,33 @@ function App() {
       window.clearInterval(timerId)
     }
   }, [])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const resetEmail = params.get('resetEmail')
+    const resetToken = params.get('resetToken')
+
+    if (resetEmail || resetToken) {
+      setForgotPasswordData((prev) => ({
+        ...prev,
+        email: resetEmail || prev.email,
+        token: resetToken || prev.token,
+      }))
+      openModal('login')
+    }
+  }, [])
+
+  useEffect(() => {
+    if (user?.email) {
+      setForgotPasswordData((prev) => ({ ...prev, email: prev.email || user.email }))
+    }
+  }, [user])
+
+  useEffect(() => {
+    if (currentView !== 'room-details') {
+      setIsRoomDetailsMaximized(false)
+    }
+  }, [currentView])
 
   // Geolocation tracking
   useEffect(() => {
@@ -608,17 +663,15 @@ function App() {
               throw new Error(result.message || 'Premium verification failed.')
             }
 
-            const updatedUser = {
-              ...user,
-              isPremium: true,
-              premiumUntil: result.premiumUntil,
-              premiumPlan: result.premiumPlan
+            setActiveModal('account')
+            setAccountTab('billings')
+            fetchUserBills()
+
+            if (result?.status === 'ALREADY_ACTIVE' || result?.activationStatus === 'ACTIVE') {
+              showToast(result.message || 'Plan is already active.')
+            } else {
+              showToast('Payment verified. Go to Account section to start your premium activation.')
             }
-            setUser(updatedUser)
-            localStorage.setItem('shelter_user', JSON.stringify(updatedUser))
-            fetchAllRooms()
-            launchCelebration('Premium Activated', `${user.fullName}, your premium access is now live.`)
-            showToast(result.message || 'Premium activated successfully!')
           }
         } catch (error) {
           console.error("Verification error:", error)
@@ -636,6 +689,8 @@ function App() {
       } else if (paymentContext === 'room-registration') {
         launchCelebration('Room Registered Congrats', 'Your room listing is already submitted successfully.')
         showToast('Room registration was already completed successfully.')
+      } else {
+        showToast('Payment successful. Go to Account section to start your premium activation.')
       }
       window.history.replaceState({}, document.title, window.location.pathname)
     } else if (paymentStatus === 'failure') {
@@ -709,6 +764,16 @@ function App() {
     setSignupMessage(null)
     setLoginMessage(null)
     setRoomMessage(null)
+    setPasswordActionMessage(null)
+    if (view === 'signup') {
+      setSignupMethod('email')
+      setSignupStep(1)
+      setSignupOtpCode('')
+    }
+    if (view === 'login') {
+      setLoginMethod('email')
+      setForgotPasswordStep(1)
+    }
   }
 
   const closeModal = () => {
@@ -716,8 +781,16 @@ function App() {
     setRoomData(initialRoomState)
     setRoomStep(1)
     setRoomPhotos([])
-    setIsAccountMaximized(false)
+    setIsAuthMaximized(false)
     setAccountTab('profile')
+    setPasswordActionMessage(null)
+    setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' })
+    setForgotPasswordData({ email: user?.email || '', token: '', newPassword: '', confirmPassword: '' })
+    setForgotPasswordStep(1)
+    setSignupData(initialSignupState)
+    setSignupMethod('email')
+    setSignupStep(1)
+    setSignupOtpCode('')
   }
 
   const handleLogout = () => {
@@ -729,6 +802,11 @@ function App() {
   const handleSignupChange = (event: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.target
     setSignupData((prev) => ({ ...prev, [name]: value }))
+    if (signupMethod === 'email' && signupStep === 2) {
+      setSignupStep(1)
+      setSignupOtpCode('')
+      setSignupMessage(null)
+    }
   }
 
   const handleLoginChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -747,12 +825,95 @@ function App() {
     }
   }
 
+  const handleSignupRequestOtp = async () => {
+    const emailToSend = signupData.email.trim()
+
+    if (!VALID_EMAIL_REGEX.test(emailToSend)) {
+      setSignupMessage({ type: 'error', text: 'Please enter a valid email address.' })
+      return
+    }
+
+    setSignupLoading(true)
+    setSignupMessage(null)
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/signup/request-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: signupData.fullName,
+          age: Number(signupData.age),
+          address: signupData.address,
+          email: emailToSend,
+          password: signupData.password,
+        }),
+      })
+
+      const payload = await response.json()
+
+      if (!response.ok) {
+        throw new Error(payload?.message ?? 'Failed to send verification code')
+      }
+
+      if (payload?.verificationCode) {
+        setSignupOtpCode(String(payload.verificationCode))
+      }
+
+      setSignupStep(2)
+      setSignupMessage({ type: 'success', text: payload?.message ?? 'Verification code sent to your email.' })
+    } catch (error) {
+      setSignupMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to send verification code' })
+    } finally {
+      setSignupLoading(false)
+    }
+  }
+
   const handleSignupSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setSignupLoading(true)
     setSignupMessage(null)
 
+    const emailToSend = signupMethod === 'email' ? signupData.email.trim() : ''
+    const phoneToSend = signupMethod === 'phone' ? `${authCountryCode}${signupData.phoneNumber}` : ''
+
     try {
+      if (signupMethod === 'email') {
+        if (signupStep === 1) {
+          await handleSignupRequestOtp()
+          return
+        }
+
+        if (!signupOtpCode.trim()) {
+          setSignupMessage({ type: 'error', text: 'Enter the verification code sent to your email.' })
+          return
+        }
+
+        const response = await fetch(`${API_BASE_URL}/auth/signup/verify-otp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: emailToSend,
+            otp: signupOtpCode.trim(),
+          }),
+        })
+
+        const payload = await response.json()
+
+        if (!response.ok) {
+          throw new Error(payload?.message ?? 'OTP verification failed')
+        }
+
+        setSignupMessage({ type: 'success', text: payload?.message ?? 'Signup successful' })
+        setSignupData(initialSignupState)
+        setSignupOtpCode('')
+        setSignupStep(1)
+        setTimeout(() => {
+          closeModal()
+          openModal('login')
+        }, 1500)
+        return
+      }
+
       const response = await fetch(`${API_BASE_URL}/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -760,8 +921,9 @@ function App() {
           fullName: signupData.fullName,
           age: Number(signupData.age),
           address: signupData.address,
-          email: signupData.email,
-          phoneNumber: signupData.phoneNumber,
+          email: emailToSend,
+          phoneNumber: phoneToSend,
+          countryCode: authCountryCode,
           password: signupData.password,
         }),
       })
@@ -790,8 +952,17 @@ function App() {
     setLoginLoading(true)
     setLoginMessage(null)
 
+    const rawCredential = loginData.credential.trim()
+    const credentialValue = loginMethod === 'phone'
+      ? `${authCountryCode}${rawCredential}`
+      : rawCredential
+
     // Check if this is an admin login attempt BEFORE API call
-    const isAdminAttempt = loginData.credential.trim() === '9746872051' && loginData.password === 'sahil@123'
+    const isAdminAttempt = (
+      rawCredential === '9746872051' ||
+      credentialValue.trim() === '9746872051' ||
+      credentialValue.trim() === `${authCountryCode}9746872051`
+    ) && loginData.password === 'sahil@123'
 
     if (isAdminAttempt) {
       // Show admin verification modal instead of logging in normally
@@ -806,7 +977,7 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          credential: loginData.credential,
+          credential: credentialValue,
           password: loginData.password,
         }),
       })
@@ -829,6 +1000,119 @@ function App() {
       setLoginMessage({ type: 'error', text: error instanceof Error ? error.message : 'Login failed' })
     } finally {
       setLoginLoading(false)
+    }
+  }
+
+  const handleChangePasswordInput = (event: ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = event.target
+    setChangePasswordData((prev) => ({ ...prev, [name]: value }))
+  }
+
+  const handleForgotPasswordInput = (event: ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = event.target
+    setForgotPasswordData((prev) => ({ ...prev, [name]: value }))
+  }
+
+  const handlePasswordChangeSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!user) return
+
+    if (changePasswordData.newPassword !== changePasswordData.confirmPassword) {
+      setPasswordActionMessage({ type: 'error', text: 'New password and confirm password do not match.' })
+      return
+    }
+
+    setPasswordActionLoading(true)
+    setPasswordActionMessage(null)
+
+    try {
+      const response = await fetchWithProxyFallback('/auth/password/change', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          currentPassword: changePasswordData.currentPassword,
+          newPassword: changePasswordData.newPassword,
+        }),
+      })
+
+      const payload = await parseApiPayload(response)
+      if (!response.ok) {
+        throw new Error(payload?.message || 'Failed to change password.')
+      }
+
+      setPasswordActionMessage({ type: 'success', text: payload?.message || 'Password changed successfully.' })
+      setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' })
+    } catch (error) {
+      setPasswordActionMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to change password.' })
+    } finally {
+      setPasswordActionLoading(false)
+    }
+  }
+
+  const handleForgotPasswordRequest = async () => {
+    if (!forgotPasswordData.email.trim()) {
+      setPasswordActionMessage({ type: 'error', text: 'Enter your email first.' })
+      return
+    }
+
+    setPasswordActionLoading(true)
+    setPasswordActionMessage(null)
+    try {
+      const response = await fetchWithProxyFallback('/auth/password/reset/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotPasswordData.email.trim() }),
+      })
+
+      const payload = await parseApiPayload(response)
+      if (!response.ok) {
+        throw new Error(payload?.message || 'Failed to send verification email.')
+      }
+
+      const tokenHint = payload?.verificationToken ? ` Dev token: ${payload.verificationToken}` : ''
+      setPasswordActionMessage({ type: 'success', text: `${payload?.message || 'Verification sent.'}${tokenHint}` })
+      setForgotPasswordStep(2)
+    } catch (error) {
+      setPasswordActionMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to send verification email.' })
+    } finally {
+      setPasswordActionLoading(false)
+    }
+  }
+
+  const handleForgotPasswordVerify = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (forgotPasswordData.newPassword !== forgotPasswordData.confirmPassword) {
+      setPasswordActionMessage({ type: 'error', text: 'Reset password and confirm password do not match.' })
+      return
+    }
+
+    setPasswordActionLoading(true)
+    setPasswordActionMessage(null)
+    try {
+      const response = await fetchWithProxyFallback('/auth/password/reset/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: forgotPasswordData.email.trim(),
+          token: forgotPasswordData.token.trim(),
+          newPassword: forgotPasswordData.newPassword,
+        }),
+      })
+
+      const payload = await parseApiPayload(response)
+      if (!response.ok) {
+        throw new Error(payload?.message || 'Password reset failed.')
+      }
+
+      setPasswordActionMessage({ type: 'success', text: payload?.message || 'Password reset successful.' })
+      setForgotPasswordData((prev) => ({ ...prev, token: '', newPassword: '', confirmPassword: '' }))
+      setForgotPasswordStep(1)
+    } catch (error) {
+      setPasswordActionMessage({ type: 'error', text: error instanceof Error ? error.message : 'Password reset failed.' })
+    } finally {
+      setPasswordActionLoading(false)
     }
   }
 
@@ -1694,7 +1978,21 @@ function App() {
       )}
 
       {currentView === 'room-details' && selectedRoom && (
-        <div style={{ maxWidth: '1000px', margin: '2rem auto' }} className="glass-card room-details-container">
+        <div
+          style={{ maxWidth: '1000px', margin: '2rem auto' }}
+          className={`glass-card room-details-container ${isRoomDetailsMaximized ? 'room-details-maximized' : ''}`}
+        >
+          <div className="modal-header-actions room-details-actions">
+            <button
+              type="button"
+              className="modal-maximize-btn"
+              onClick={() => setIsRoomDetailsMaximized(!isRoomDetailsMaximized)}
+              title={isRoomDetailsMaximized ? 'Minimize room details' : 'Maximize room details'}
+              aria-label={isRoomDetailsMaximized ? 'Minimize room details' : 'Maximize room details'}
+            >
+              {isRoomDetailsMaximized ? 'Min' : 'Max'}
+            </button>
+          </div>
           <button
             className="back-btn"
             onClick={() => setCurrentView('rooms')}
@@ -1806,9 +2104,6 @@ function App() {
 
                 <div className="booking-form-card">
                   <h4 style={{ marginBottom: '1rem', color: '#f8fafc' }}>Book this Room</h4>
-                  <p style={{ marginTop: 0, marginBottom: '0.8rem', color: '#94a3b8', fontSize: '0.86rem' }}>
-                    Booking is submitted immediately. eSewa opens after submit for showcase.
-                  </p>
                   <form onSubmit={handleBookingSubmit} className="auth-form">
                     <label style={{ color: '#94a3b8' }}>
                       <span>Check-in Date</span>
@@ -1908,7 +2203,7 @@ function App() {
                         )}
                       </span>
                     </span>
-                    <button className="account-btn" onClick={() => { setActiveModal('account'); setInquiryView('sent'); fetchUserInquiries('sent'); }}>
+                    <button type="button" className="account-btn" onClick={() => { setActiveModal('account'); setInquiryView('sent'); fetchUserInquiries('sent'); }}>
                       👤 Account
                     </button>
                     <button className="ghost-cta mini" onClick={handleLogout}>
@@ -2717,17 +3012,17 @@ function App() {
         activeModal && (
           <div className="auth-modal" role="dialog" aria-modal="true">
             <div className="auth-modal__backdrop" onClick={closeModal} />
-            <section className={`glass-card auth-panel auth-modal__card ${activeModal === 'account' ? (isAccountMaximized ? 'account-modal-maximized' : 'account-modal-wide') : ''}`}>
+                <section className={`glass-card auth-panel auth-modal__card ${isAuthMaximized ? 'auth-modal-maximized' : 'auth-modal-wide'}`}>
               <div className="modal-header-actions">
-                {activeModal === 'account' && (
-                  <button
-                    className="modal-maximize-btn"
-                    onClick={() => setIsAccountMaximized(!isAccountMaximized)}
-                    title={isAccountMaximized ? "Minimize" : "Maximize"}
-                  >
-                    {isAccountMaximized ? "❐" : "⬜"}
-                  </button>
-                )}
+                    <button
+                      type="button"
+                      className="modal-maximize-btn"
+                      onClick={() => setIsAuthMaximized(!isAuthMaximized)}
+                      title={isAuthMaximized ? 'Minimize' : 'Maximize'}
+                      aria-label={isAuthMaximized ? 'Minimize modal' : 'Maximize modal'}
+                    >
+                      {isAuthMaximized ? 'Min' : 'Max'}
+                    </button>
                 <button className="modal-close" onClick={closeModal} aria-label="Close dialog">
                   ×
                 </button>
@@ -2739,6 +3034,30 @@ function App() {
                     <h1>Sign up</h1>
                   </header>
                   <form className="auth-form" onSubmit={handleSignupSubmit}>
+                    <div className="auth-switch-row">
+                      <button
+                        type="button"
+                        className={`auth-switch-btn ${signupMethod === 'email' ? 'active' : ''}`}
+                        onClick={() => {
+                          setSignupMethod('email')
+                          setSignupStep(1)
+                          setSignupOtpCode('')
+                        }}
+                      >
+                        Use Email
+                      </button>
+                      <button
+                        type="button"
+                        className={`auth-switch-btn ${signupMethod === 'phone' ? 'active' : ''}`}
+                        onClick={() => {
+                          setSignupMethod('phone')
+                          setSignupStep(1)
+                          setSignupOtpCode('')
+                        }}
+                      >
+                        Use Phone
+                      </button>
+                    </div>
                     <label>
                       <span>Full name</span>
                       <input name="fullName" value={signupData.fullName} onChange={handleSignupChange} required />
@@ -2751,14 +3070,42 @@ function App() {
                       <span>Address</span>
                       <input name="address" value={signupData.address} onChange={handleSignupChange} required />
                     </label>
-                    <label>
-                      <span>Email</span>
-                      <input type="email" name="email" value={signupData.email} onChange={handleSignupChange} required />
-                    </label>
-                    <label>
-                      <span>Phone number</span>
-                      <input name="phoneNumber" value={signupData.phoneNumber} onChange={handleSignupChange} required />
-                    </label>
+                    {signupMethod === 'email' ? (
+                      <label>
+                        <span>Email address</span>
+                        <div className="auth-email-row">
+                          <input type="email" name="email" value={signupData.email} onChange={handleSignupChange} placeholder="yourname@example.com" required pattern="[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)+" />
+                          {signupStep === 1 && (
+                            <button type="button" className="ghost-cta mini auth-send-otp-btn" onClick={handleSignupRequestOtp} disabled={signupLoading}>
+                              {signupLoading ? 'Sending...' : 'Send OTP'}
+                            </button>
+                          )}
+                        </div>
+                      </label>
+                    ) : (
+                      <label>
+                        <span>Phone number</span>
+                        <div className="auth-phone-row">
+                          <select value={authCountryCode} onChange={(e) => setAuthCountryCode(e.target.value)}>
+                            {COUNTRY_CODES.map((country) => (
+                              <option key={country.code} value={country.code}>{country.label}</option>
+                            ))}
+                          </select>
+                          <input
+                            name="phoneNumber"
+                            value={signupData.phoneNumber}
+                            onChange={handleSignupChange}
+                            required
+                            placeholder="10-digit number"
+                          />
+                        </div>
+                      </label>
+                    )}
+                    {signupMethod === 'email' && (
+                      <p className="form-hint">
+                        Step 1: send a code to the email you entered. Step 2: enter that code to finish signup.
+                      </p>
+                    )}
                     <label>
                       <span>Password</span>
                       <div className="password-input-container">
@@ -2776,14 +3123,32 @@ function App() {
                           onClick={() => setShowSignupPassword(!showSignupPassword)}
                           aria-label={showSignupPassword ? "Hide password" : "Show password"}
                         >
-                          {showSignupPassword ? "👁️" : "👁️‍🗨️"}
+                            {showSignupPassword ? "Hide" : "Show"}
                         </button>
                       </div>
                     </label>
 
-                    <button className="primary-cta" type="submit" disabled={signupLoading}>
-                      {signupLoading ? 'Creating account...' : 'Create account'}
-                    </button>
+                    {signupMethod === 'email' && signupStep === 2 && (
+                      <label>
+                        <span>Verification code</span>
+                        <input
+                          name="otp"
+                          value={signupOtpCode}
+                          onChange={(event) => setSignupOtpCode(event.target.value)}
+                          placeholder="6-digit code"
+                          inputMode="numeric"
+                          required
+                        />
+                      </label>
+                    )}
+
+                    {signupMethod !== 'email' || signupStep === 2 ? (
+                      <button className="primary-cta" type="submit" disabled={signupLoading}>
+                        {signupLoading ? (signupMethod === 'email' ? 'Verifying code...' : 'Creating account...') : (signupMethod === 'email' ? 'Sign Up' : 'Create account')}
+                      </button>
+                    ) : (
+                      <p className="form-hint">Click Send OTP first, then enter the code to finish signup.</p>
+                    )}
                   </form>
                   {signupMessage && (
                     <p className={`form-feedback ${signupMessage.type === 'success' ? 'success' : 'error'}`}>
@@ -2798,9 +3163,36 @@ function App() {
                     <h1>Login</h1>
                   </header>
                   <form className="auth-form" onSubmit={handleLoginSubmit}>
+                    <div className="auth-switch-row">
+                      <button
+                        type="button"
+                        className={`auth-switch-btn ${loginMethod === 'email' ? 'active' : ''}`}
+                        onClick={() => setLoginMethod('email')}
+                      >
+                        Login with Email
+                      </button>
+                      <button
+                        type="button"
+                        className={`auth-switch-btn ${loginMethod === 'phone' ? 'active' : ''}`}
+                        onClick={() => setLoginMethod('phone')}
+                      >
+                        Login with Phone
+                      </button>
+                    </div>
                     <label>
-                      <span>Email or phone</span>
-                      <input name="credential" value={loginData.credential} onChange={handleLoginChange} required />
+                      <span>{loginMethod === 'phone' ? 'Phone number' : 'Email address'}</span>
+                      {loginMethod === 'phone' ? (
+                        <div className="auth-phone-row">
+                          <select value={authCountryCode} onChange={(e) => setAuthCountryCode(e.target.value)}>
+                            {COUNTRY_CODES.map((country) => (
+                              <option key={country.code} value={country.code}>{country.label}</option>
+                            ))}
+                          </select>
+                          <input name="credential" value={loginData.credential} onChange={handleLoginChange} placeholder="10-digit number" required />
+                        </div>
+                      ) : (
+                        <input type="email" name="credential" value={loginData.credential} onChange={handleLoginChange} placeholder="yourname@example.com" required />
+                      )}
                     </label>
                     <label>
                       <span>Password</span>
@@ -2819,7 +3211,7 @@ function App() {
                           onClick={() => setShowLoginPassword(!showLoginPassword)}
                           aria-label={showLoginPassword ? "Hide password" : "Show password"}
                         >
-                          {showLoginPassword ? "👁️" : "👁️‍🗨️"}
+                            {showLoginPassword ? "Hide" : "Show"}
                         </button>
                       </div>
                     </label>
@@ -2828,9 +3220,60 @@ function App() {
                       {loginLoading ? 'Signing in...' : 'Login'}
                     </button>
                   </form>
+                  <div className="auth-forgot-box">
+                    <div className="auth-forgot-intro">
+                      <div>
+                        <h3>Forgot your Password?</h3>
+                        <p>Open the reset container to continue.</p>
+                      </div>
+                      <button
+                        type="button"
+                        className="ghost-cta mini auth-forgot-open-btn"
+                        onClick={() => setForgotPasswordStep(2)}
+                      >
+                        Open
+                      </button>
+                    </div>
+                    {forgotPasswordStep === 2 && (
+                      <div className="auth-forgot-overlay" role="region" aria-label="Password reset panel">
+                        <div className="auth-forgot-reset-panel">
+                          <button
+                            type="button"
+                            className="auth-forgot-back-btn"
+                            onClick={() => setForgotPasswordStep(1)}
+                          >
+                            Previous
+                          </button>
+                          <div className="auth-forgot-grid">
+                            <input
+                              name="email"
+                              type="email"
+                              value={forgotPasswordData.email}
+                              onChange={handleForgotPasswordInput}
+                              placeholder="yourname@example.com"
+                            />
+                            <button type="button" className="ghost-cta mini" onClick={handleForgotPasswordRequest} disabled={passwordActionLoading}>
+                              Send Verification
+                            </button>
+                          </div>
+                          <form onSubmit={handleForgotPasswordVerify} className="auth-form" style={{ marginTop: '0.75rem' }}>
+                            <input name="token" value={forgotPasswordData.token} onChange={handleForgotPasswordInput} placeholder="Verification token" required />
+                            <input name="newPassword" type="password" value={forgotPasswordData.newPassword} onChange={handleForgotPasswordInput} placeholder="New password" required />
+                            <input name="confirmPassword" type="password" value={forgotPasswordData.confirmPassword} onChange={handleForgotPasswordInput} placeholder="Confirm new password" required />
+                            <button className="primary-cta" type="submit" disabled={passwordActionLoading}>Reset Password</button>
+                          </form>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   {loginMessage && (
                     <p className={`form-feedback ${loginMessage.type === 'success' ? 'success' : 'error'}`}>
                       {loginMessage.text}
+                    </p>
+                  )}
+                  {passwordActionMessage && (
+                    <p className={`form-feedback ${passwordActionMessage.type === 'success' ? 'success' : 'error'}`}>
+                      {passwordActionMessage.text}
                     </p>
                   )}
                 </>
@@ -2959,10 +3402,6 @@ function App() {
                               <label>Phone Number</label>
                               <input name="phoneNumber" type="tel" defaultValue={user.phoneNumber} required />
                             </div>
-                            <div className="pro-field">
-                              <label>New Password (Optional)</label>
-                              <input name="password" type="password" placeholder="••••••••" />
-                            </div>
                           </div>
                           <div className="pro-form-actions" style={{ display: 'flex', gap: '1rem' }}>
                             <button type="submit" className="pro-button-primary">Save Changes</button>
@@ -2995,6 +3434,73 @@ function App() {
                             </button>
                           </div>
                         </form>
+
+                        <div className="profile-password-box">
+                          <h3>Change Password Using Current Password</h3>
+                          <form className="pro-form" onSubmit={handlePasswordChangeSubmit}>
+                            <div className="pro-form-row">
+                              <div className="pro-field">
+                                <label>Current Password</label>
+                                <input name="currentPassword" type="password" value={changePasswordData.currentPassword} onChange={handleChangePasswordInput} required />
+                              </div>
+                              <div className="pro-field">
+                                <label>New Password</label>
+                                <input name="newPassword" type="password" value={changePasswordData.newPassword} onChange={handleChangePasswordInput} required />
+                              </div>
+                            </div>
+                            <div className="pro-form-row">
+                              <div className="pro-field">
+                                <label>Confirm New Password</label>
+                                <input name="confirmPassword" type="password" value={changePasswordData.confirmPassword} onChange={handleChangePasswordInput} required />
+                              </div>
+                              <div className="pro-field" />
+                            </div>
+                            <button type="submit" className="pro-button-primary" disabled={passwordActionLoading}>Update Password</button>
+                          </form>
+                        </div>
+
+                        <div className="profile-password-box">
+                          <h3>Reset Password via Email Verification</h3>
+                          <p>Send verification to email, then paste token and set your new password.</p>
+                          <div className="auth-forgot-grid" style={{ marginBottom: '0.75rem' }}>
+                            <input
+                              name="email"
+                              type="email"
+                              value={forgotPasswordData.email}
+                              onChange={handleForgotPasswordInput}
+                              placeholder="yourname@example.com"
+                            />
+                            <button type="button" className="pro-button-secondary" onClick={handleForgotPasswordRequest} disabled={passwordActionLoading}>
+                              Send Verification
+                            </button>
+                          </div>
+                          <form onSubmit={handleForgotPasswordVerify} className="pro-form">
+                            <div className="pro-form-row">
+                              <div className="pro-field">
+                                <label>Verification Token</label>
+                                <input name="token" value={forgotPasswordData.token} onChange={handleForgotPasswordInput} required />
+                              </div>
+                              <div className="pro-field">
+                                <label>New Password</label>
+                                <input name="newPassword" type="password" value={forgotPasswordData.newPassword} onChange={handleForgotPasswordInput} required />
+                              </div>
+                            </div>
+                            <div className="pro-form-row">
+                              <div className="pro-field">
+                                <label>Confirm New Password</label>
+                                <input name="confirmPassword" type="password" value={forgotPasswordData.confirmPassword} onChange={handleForgotPasswordInput} required />
+                              </div>
+                              <div className="pro-field" />
+                            </div>
+                            <button type="submit" className="pro-button-primary" disabled={passwordActionLoading}>Verify and Reset</button>
+                          </form>
+                        </div>
+
+                        {passwordActionMessage && (
+                          <p className={`form-feedback ${passwordActionMessage.type === 'success' ? 'success' : 'error'}`}>
+                            {passwordActionMessage.text}
+                          </p>
+                        )}
                       </div>
                     )}
 
