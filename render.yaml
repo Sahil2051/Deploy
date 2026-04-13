@@ -23,6 +23,7 @@ databases:
 services:
   - type: web
     name: shelter-api
+    plan: free
     runtime: node
     rootDir: server
     buildCommand: npm install
