@@ -1,0 +1,50 @@
+# Render Blueprint: PostgreSQL + Node API.
+# Import this repo in Render → Blueprints → New Blueprint Instance.
+#
+# After deploy:
+# 1. Run migrations once: Shell for shelter-api → cd server && npm run db:schema
+# 2. Set secrets in the dashboard: FRONTEND_URL, GOOGLE_*, SMTP_*, GOOGLE_REDIRECT_URI (https://your-api.onrender.com/...)
+# 3. For the Vite app (ut-frontend), add a Static Site with build "npm install && npm run build",
+#    publish "dist", and set VITE_API_BASE_URL to https://<your-api-host>/api at build time.
+
+databases:
+  - name: shelter-postgres
+    databaseName: shelter_auth
+    user: shelter
+    plan: free
+
+services:
+  - type: web
+    name: shelter-api
+    runtime: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: shelter-postgres
+          property: connectionString
+      - key: PGSSLMODE
+        value: require
+      - key: FRONTEND_URL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false

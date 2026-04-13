@@ -1,0 +1,1 @@
+source server/migration_payments_history.sql;

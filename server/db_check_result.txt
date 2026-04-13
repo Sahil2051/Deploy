@@ -1,0 +1,7 @@
+Tables in database: ["messages","rooms","user_logins","users"]
+Table bookings is MISSING.
+Table booking_logs is MISSING.
+Table rooms exists with 3 rows.
+Columns in rooms: id, owner_id, owner_name, owner_id_number, title, description, address, city, price_per_month, room_type, bedrooms, bathrooms, area_sqft, available_from, amenities, contact_email, contact_phone, is_available, created_at, updated_at, photos
+Table users exists with 2 rows.
+Columns in users: id, full_name, age, address_line, email, phone_number, password_hash, is_verified, created_at, updated_at
