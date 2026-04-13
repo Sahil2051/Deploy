@@ -30,6 +30,7 @@ server/.env
 
 # Python virtual environment
 .venv/
+.venv
 
 # Uploads (if not to be tracked)
 server/uploads/
