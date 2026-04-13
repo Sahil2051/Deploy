@@ -55,3 +55,13 @@ services:
         sync: false
       - key: SMTP_FROM
         sync: false
+
+  - type: web
+    name: shelter-frontend
+    runtime: static
+    rootDir: ut-frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        sync: false
