@@ -15,21 +15,20 @@ const ensureFeaturePaymentsTable = async () => {
   if (!tableReadyPromise) {
     tableReadyPromise = db.execute(`
       CREATE TABLE IF NOT EXISTS feature_payments (
-        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-        user_id BIGINT UNSIGNED NOT NULL,
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         transaction_uuid VARCHAR(120) NOT NULL UNIQUE,
-        payment_for ENUM('booking', 'room_registration') NOT NULL,
+        payment_for VARCHAR(30) NOT NULL
+          CHECK (payment_for IN ('booking', 'room_registration')),
         amount DECIMAL(10,2) NOT NULL,
         payment_status VARCHAR(30) NOT NULL DEFAULT 'INITIATED',
-        is_verified TINYINT(1) NOT NULL DEFAULT 0,
-        metadata_json TEXT NULL,
-        is_consumed TINYINT(1) NOT NULL DEFAULT 0,
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        verified_at DATETIME NULL,
-        consumed_at DATETIME NULL,
-        INDEX idx_feature_payments_user_id (user_id),
-        INDEX idx_feature_payments_purpose (payment_for)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+        metadata_json TEXT,
+        is_consumed BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        verified_at TIMESTAMPTZ,
+        consumed_at TIMESTAMPTZ
+      )
     `)
   }
 
@@ -187,8 +186,8 @@ router.post('/verify', async (req, res) => {
     await db.execute(
       `UPDATE feature_payments
        SET payment_status = 'COMPLETE',
-           is_verified = 1,
-           verified_at = UTC_TIMESTAMP()
+           is_verified = TRUE,
+           verified_at = NOW()
        WHERE id = ?`,
       [payment.id]
     )

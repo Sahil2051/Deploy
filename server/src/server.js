@@ -28,7 +28,7 @@ app.use('/api/premium', premiumRoutes)
 app.use('/api/messages', messagesRoutes)
 app.use('/api/payments', paymentsRoutes)
 
-const port = Number(process.env.APP_PORT ?? 5000)
+const port = Number(process.env.PORT ?? process.env.APP_PORT ?? 5000)
 const host = process.env.APP_HOST ?? '0.0.0.0'
 
 app.listen(port, host, () => {

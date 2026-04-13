@@ -72,7 +72,7 @@ router.patch('/users/:userId/verify', async (req, res) => {
 
   try {
     const [result] = await db.execute(
-      'UPDATE users SET is_verified = 1 WHERE id = ?',
+      'UPDATE users SET is_verified = TRUE WHERE id = ?',
       [userId]
     )
 
@@ -93,7 +93,7 @@ router.patch('/users/:userId/unverify', async (req, res) => {
 
   try {
     const [result] = await db.execute(
-      'UPDATE users SET is_verified = 0 WHERE id = ?',
+      'UPDATE users SET is_verified = FALSE WHERE id = ?',
       [userId]
     )
 

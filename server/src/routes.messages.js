@@ -30,9 +30,12 @@ router.get('/conversations', requireAuth, async (req, res) => {
         r.title as room_title,
         ct.last_message_at,
         cm.content as last_message,
-        cm.sender_id = ? as is_from_me,
+        CASE WHEN cm.sender_id = ? THEN 1 ELSE 0 END as is_from_me,
         ct.is_favorite,
-        (SELECT COUNT(*) FROM chat_messages WHERE receiver_id = ? AND sender_id = other_user_id AND is_read = FALSE) as unread_count
+        (SELECT COUNT(*)::int FROM chat_messages cm2
+         WHERE cm2.receiver_id = ?
+           AND cm2.sender_id = (CASE WHEN ct.participant1_id = ? THEN ct.participant2_id ELSE ct.participant1_id END)
+           AND cm2.is_read = FALSE) as unread_count
       FROM chat_threads ct
       JOIN users u ON (u.id = CASE WHEN ct.participant1_id = ? THEN ct.participant2_id ELSE ct.participant1_id END)
       LEFT JOIN rooms r ON ct.room_id = r.id
@@ -44,7 +47,7 @@ router.get('/conversations', requireAuth, async (req, res) => {
       )
       WHERE (ct.participant1_id = ? OR ct.participant2_id = ?)
       ORDER BY ct.is_favorite DESC, ct.last_message_at DESC
-    `, [userId, userId, userId, userId, userId, userId])
+    `, [userId, userId, userId, userId, userId, userId, userId])
 
     res.json({ conversations })
   } catch (error) {
@@ -112,13 +115,21 @@ router.post('/send', requireAuth, async (req, res) => {
       VALUES (?, ?, ?, ?)
     `, [senderId, receiverId, content, roomId || null])
 
-    // Update or create thread
     const participants = [senderId, receiverId].sort((a, b) => a - b)
-    await db.execute(`
-      INSERT INTO chat_threads (participant1_id, participant2_id, room_id, last_message_at)
-      VALUES (?, ?, ?, NOW())
-      ON DUPLICATE KEY UPDATE last_message_at = NOW()
-    `, [participants[0], participants[1], roomId || null])
+    const roomKey = roomId || null
+    const [threadUpdate] = await db.execute(
+      `UPDATE chat_threads SET last_message_at = NOW()
+       WHERE participant1_id = ? AND participant2_id = ? AND room_id IS NOT DISTINCT FROM ?`,
+      [participants[0], participants[1], roomKey]
+    )
+
+    if (threadUpdate.affectedRows === 0) {
+      await db.execute(
+        `INSERT INTO chat_threads (participant1_id, participant2_id, room_id, last_message_at)
+         VALUES (?, ?, ?, NOW())`,
+        [participants[0], participants[1], roomKey]
+      )
+    }
 
     res.status(201).json({
       message: 'Message sent successfully',
@@ -189,7 +200,7 @@ router.patch('/conversation/:otherUserId/favorite', requireAuth, async (req, res
       UPDATE chat_threads
       SET is_favorite = ?
       WHERE (participant1_id = ? AND participant2_id = ?) OR (participant1_id = ? AND participant2_id = ?)
-    `, [favorite ? 1 : 0, userId, otherUserId, otherUserId, userId])
+    `, [Boolean(favorite), userId, otherUserId, otherUserId, userId])
 
     res.json({ message: 'Favorite status updated' })
   } catch (error) {

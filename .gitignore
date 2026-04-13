@@ -10,6 +10,11 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+
+# Secrets — never commit
+.env
+server/.env
+*.env.local
 *.local
 
 # Editor directories and files

@@ -395,7 +395,7 @@ router.post('/login', async (req, res) => {
       const expiryDate = new Date(premiumUntil)
       if (expiryDate < new Date()) {
         isPremium = false
-        await db.execute('UPDATE users SET is_premium = 0 WHERE id = ?', [user.id])
+        await db.execute('UPDATE users SET is_premium = FALSE WHERE id = ?', [user.id])
       }
     }
 
@@ -709,7 +709,7 @@ router.put('/profile', async (req, res) => {
     })
   } catch (error) {
     console.error('Update profile error', error)
-    if (error.code === 'ER_DUP_ENTRY') {
+    if (error.code === '23505') {
       return res.status(409).json({ message: 'Email or phone already in use.' })
     }
     return res.status(500).json({ message: 'Failed to update profile.' })

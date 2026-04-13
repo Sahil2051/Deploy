@@ -25,8 +25,8 @@ router.post('/', async (req, res) => {
                  WHERE transaction_uuid = ?
                    AND user_id = ?
                    AND payment_for = 'booking'
-                   AND is_verified = 1
-                   AND is_consumed = 0
+                   AND is_verified = TRUE
+                   AND is_consumed = FALSE
                  LIMIT 1`,
                 [paymentTransactionUuid, userId]
             )
@@ -50,7 +50,7 @@ router.post('/', async (req, res) => {
 
         // C. Date Overlap Prevention Query
         const [overlapRows] = await db.execute(`
-            SELECT COUNT(*) AS total_overlaps
+            SELECT COUNT(*)::int AS total_overlaps
             FROM bookings
             WHERE room_id = ? 
               AND status NOT IN ('rejected', 'cancelled')
@@ -79,8 +79,8 @@ router.post('/', async (req, res) => {
         if (paymentRows.length > 0) {
             await db.execute(
                 `UPDATE feature_payments
-                 SET is_consumed = 1,
-                     consumed_at = UTC_TIMESTAMP()
+                 SET is_consumed = TRUE,
+                     consumed_at = NOW()
                  WHERE id = ?`,
                 [paymentRows[0].id]
             )

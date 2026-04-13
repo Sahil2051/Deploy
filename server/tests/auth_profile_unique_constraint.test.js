@@ -20,7 +20,7 @@ describe('Database Verification - Unique Constraint (TC53)', () => {
 
   test('TC53: Profile update returns 409 when DB unique constraint is violated', async () => {
     const duplicateError = new Error('Duplicate entry')
-    duplicateError.code = 'ER_DUP_ENTRY'
+    duplicateError.code = '23505'
 
     db.execute.mockRejectedValueOnce(duplicateError)
 

@@ -24,7 +24,7 @@ router.get('/', async (_req, res) => {
   try {
     const [rows] = await db.execute(
       `SELECT r.*, u.full_name as owner_full_name, u.email as owner_email, u.phone_number as owner_phone,
-       COALESCE(u.is_verified, 0) as owner_is_verified
+       (COALESCE(u.is_verified, FALSE))::int as owner_is_verified
        FROM rooms r
        JOIN users u ON r.owner_id = u.id
        WHERE r.is_available = TRUE
@@ -111,8 +111,8 @@ router.post('/', upload.array('photos', 10), async (req, res) => {
          WHERE transaction_uuid = ?
            AND user_id = ?
            AND payment_for = 'room_registration'
-           AND is_verified = 1
-           AND is_consumed = 0
+           AND is_verified = TRUE
+           AND is_consumed = FALSE
          LIMIT 1`,
         [paymentTransactionUuid, ownerId]
       )
@@ -161,8 +161,8 @@ router.post('/', upload.array('photos', 10), async (req, res) => {
     if (paymentRows.length > 0) {
       await db.execute(
         `UPDATE feature_payments
-         SET is_consumed = 1,
-             consumed_at = UTC_TIMESTAMP()
+         SET is_consumed = TRUE,
+             consumed_at = NOW()
          WHERE id = ?`,
         [paymentRows[0].id]
       )
@@ -297,19 +297,26 @@ router.get('/nearby', async (req, res) => {
 
     // Check expiry
     if (user.premium_until && new Date(user.premium_until) < new Date()) {
-      await db.execute('UPDATE users SET is_premium = 0 WHERE id = ?', [userId])
+      await db.execute('UPDATE users SET is_premium = FALSE WHERE id = ?', [userId])
       return res.status(403).json({ message: 'Premium subscription has expired.' })
     }
 
     // 2. Fetch Nearby Rooms
     const [rows] = await db.execute(
-      `SELECT r.*, u.full_name as owner_full_name, u.email as owner_email, u.phone_number as owner_phone,
-       COALESCE(u.is_verified, 0) as owner_is_verified,
-       (6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude)))) AS distance
-       FROM rooms r
-       JOIN users u ON r.owner_id = u.id
-       WHERE r.is_available = TRUE
-       HAVING distance < ?
+      `SELECT * FROM (
+         SELECT r.*, u.full_name as owner_full_name, u.email as owner_email, u.phone_number as owner_phone,
+          (COALESCE(u.is_verified, FALSE))::int as owner_is_verified,
+          (6371 * acos(
+            cos(radians(?::double precision)) * cos(radians(r.latitude)) * cos(radians(r.longitude) - radians(?::double precision))
+            + sin(radians(?::double precision)) * sin(radians(r.latitude))
+          )) AS distance
+         FROM rooms r
+         JOIN users u ON r.owner_id = u.id
+         WHERE r.is_available = TRUE
+           AND r.latitude IS NOT NULL
+           AND r.longitude IS NOT NULL
+       ) t
+       WHERE distance < ?::double precision
        ORDER BY distance ASC`,
       [lat, lng, lat, radius]
     )

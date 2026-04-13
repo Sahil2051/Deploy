@@ -26,7 +26,7 @@ router.post('/create-bill-on-click', async (req, res) => {
 
     try {
         await db.execute(
-            'INSERT INTO premium_bills (user_id, plan_type, amount, transaction_uuid, is_activated) VALUES (?, ?, ?, ?, 0)',
+            'INSERT INTO premium_bills (user_id, plan_type, amount, transaction_uuid, is_activated) VALUES (?, ?, ?, ?, FALSE)',
             [userId, planType, amount, transaction_uuid]
         )
 
@@ -82,7 +82,7 @@ router.post('/initiate', async (req, res) => {
             [userId, transaction_uuid, planType, amount]
         )
     } catch (err) {
-        if (err.code !== 'ER_DUP_ENTRY') console.error('Init record error', err)
+        if (err.code !== '23505') console.error('Init record error', err)
     }
 
     res.json({
@@ -127,8 +127,8 @@ router.post('/purchase', async (req, res) => {
         // mark user premium and compute expiration using UTC_TIMESTAMP()
         await db.execute(
             `UPDATE users 
-             SET is_premium = 1,
-                 premium_until = DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? DAY),
+             SET is_premium = TRUE,
+                 premium_until = CURRENT_TIMESTAMP + (?::integer * INTERVAL '1 day'),
                  premium_plan = ?
              WHERE id = ?`,
             [durationDays, planType, userId]
@@ -229,7 +229,7 @@ async function processVerification(decodedData) {
         await db.execute(
             `UPDATE payment_history SET 
               user_id=?, transaction_code=?, plan_type=?, amount=?, payment_status='COMPLETE',
-              is_verified=1, receipt_number=?, premium_expires_at=?, paid_amount=?, 
+              is_verified=TRUE, receipt_number=?, premium_expires_at=?, paid_amount=?, 
               verification_date=?, activation_status='PENDING_ACTIVATION'
              WHERE transaction_uuid=?`,
             [
@@ -406,7 +406,7 @@ router.post('/activate', async (req, res) => {
     try {
         // Find the bill
         const [bills] = await db.execute(
-            'SELECT * FROM premium_bills WHERE id = ? AND user_id = ? AND is_activated = 0',
+            'SELECT * FROM premium_bills WHERE id = ? AND user_id = ? AND is_activated = FALSE',
             [billId, userId]
         )
 
@@ -428,13 +428,13 @@ router.post('/activate', async (req, res) => {
 
         // 1. Update bill
         await db.execute(
-            'UPDATE premium_bills SET is_activated = 1, activated_at = ?, expires_at = ? WHERE id = ?',
+            'UPDATE premium_bills SET is_activated = TRUE, activated_at = ?, expires_at = ? WHERE id = ?',
             [formattedNow, formattedExpiry, billId]
         )
 
         // 2. Update user
         await db.execute(
-            'UPDATE users SET is_premium = 1, premium_until = ?, premium_plan = ? WHERE id = ?',
+            'UPDATE users SET is_premium = TRUE, premium_until = ?, premium_plan = ? WHERE id = ?',
             [formattedExpiry, planType, userId]
         )
 
@@ -508,7 +508,7 @@ router.post('/cancel', async (req, res) => {
 
         // Remove premium from user
         await db.execute(
-            `UPDATE users SET is_premium = 0, premium_until = NULL, premium_plan = NULL WHERE id = ?`,
+            `UPDATE users SET is_premium = FALSE, premium_until = NULL, premium_plan = NULL WHERE id = ?`,
             [userId]
         )
 
