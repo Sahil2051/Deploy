@@ -1,6 +1,13 @@
 # Render Blueprint: PostgreSQL + Node API.
 # Import this repo in Render → Blueprints → New Blueprint Instance.
 #
+# Manual Web Service settings (if not using Blueprint):
+#   Root Directory: server
+#   Build Command:  npm install
+#   Start Command:  npm start
+# Do NOT set Start Command to "/" — that causes: bash: /: Is a directory (exit 126).
+# If Root Directory is empty (repo root), use: Build npm run build, Start npm start
+#
 # After deploy:
 # 1. Run migrations once: Shell for shelter-api → cd server && npm run db:schema
 # 2. Set secrets in the dashboard: FRONTEND_URL, GOOGLE_*, SMTP_*, GOOGLE_REDIRECT_URI (https://your-api.onrender.com/...)
