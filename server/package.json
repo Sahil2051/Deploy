@@ -19,6 +19,9 @@
     "pg": "^8.13.1",
     "nodemailer": "^6.9.15"
   },
+  "engines": {
+    "node": ">=18"
+  },
   "devDependencies": {
     "jest": "^30.3.0",
     "nodemon": "^3.1.7",

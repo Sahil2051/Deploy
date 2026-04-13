@@ -1,0 +1,12 @@
+{
+  "name": "shelter-deploy",
+  "private": true,
+  "description": "Root helpers for Render when Root Directory is the repo root (not server/).",
+  "scripts": {
+    "build": "npm install --prefix server",
+    "start": "node server/src/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
