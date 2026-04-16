@@ -26,6 +26,8 @@ services:
     runtime: node
     rootDir: server
     buildCommand: npm install
+    # Ensure tables exist before the app starts (safe because schema uses IF NOT EXISTS).
+    preDeployCommand: npm run db:schema
     startCommand: npm start
     healthCheckPath: /health
     envVars:
@@ -38,13 +40,13 @@ services:
       - key: PGSSLMODE
         value: require
       - key: FRONTEND_URL
-        sync: false
+        value: https://shelter.onrender.com
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
       - key: GOOGLE_REDIRECT_URI
-        sync: false
+        value: https://shelter-api.onrender.com/api/auth/google/callback
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT
@@ -55,3 +57,14 @@ services:
         sync: false
       - key: SMTP_FROM
         sync: false
+
+  - type: web
+    name: shelter-frontend
+    runtime: static
+    rootDir: ut-frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        # Must point at the deployed backend hostname + /api.
+        value: https://shelter-api.onrender.com/api
