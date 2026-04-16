@@ -12,9 +12,20 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 })
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:5000/api'
-const FALLBACK_API_BASE_URL = import.meta.env.VITE_FALLBACK_API_BASE_URL ?? 'http://127.0.0.1:5000/api'
+const RUNTIME_ORIGIN = typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:5173'
+const SAME_ORIGIN_API_BASE_URL = `${RUNTIME_ORIGIN}/api`
 const LOCALHOST_API_BASE_URL = 'http://localhost:5000/api'
+const LOCALHOST_LOOPBACK_API_BASE_URL = 'http://127.0.0.1:5000/api'
+const IS_LOCAL_RUNTIME = /^(localhost|127\.0\.0\.1)$/i.test(
+  typeof window !== 'undefined' ? window.location.hostname : 'localhost'
+)
+
+// In production, prefer an explicit VITE_API_BASE_URL. If missing, try same-origin
+// before falling back to localhost values that only work during local development.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
+  ?? (IS_LOCAL_RUNTIME ? LOCALHOST_LOOPBACK_API_BASE_URL : SAME_ORIGIN_API_BASE_URL)
+const FALLBACK_API_BASE_URL = import.meta.env.VITE_FALLBACK_API_BASE_URL
+  ?? (IS_LOCAL_RUNTIME ? LOCALHOST_API_BASE_URL : SAME_ORIGIN_API_BASE_URL)
 const VALID_EMAIL_REGEX = /^[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i
 
 const toHealthUrl = (apiBaseUrl: string) => {
