@@ -12,15 +12,23 @@ const paymentsRoutes = require('./routes.payments')
 
 const app = express()
 
-// CORS: allow only the deployed frontend origin (if configured).
-// Frontend uses `localStorage` (no cookies), so credentials are not required.
-const allowedOrigin = process.env.FRONTEND_URL
+// CORS: allow configured frontend origin(s) plus localhost during development.
+// FRONTEND_URL can be a single URL or a comma-separated list of URLs.
+const allowedOrigins = String(process.env.FRONTEND_URL || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean)
+
+if (process.env.NODE_ENV !== 'production') {
+  allowedOrigins.push('http://localhost:5173', 'http://127.0.0.1:5173')
+}
+
 const corsOptions = {
   origin: (origin, callback) => {
     // For non-browser requests (no Origin header), allow.
     if (!origin) return callback(null, true)
-    if (!allowedOrigin) return callback(null, true)
-    if (origin === allowedOrigin) return callback(null, true)
+    if (allowedOrigins.length === 0) return callback(null, true)
+    if (allowedOrigins.includes(origin)) return callback(null, true)
     return callback(new Error(`CORS blocked origin: ${origin}`))
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -31,6 +39,23 @@ app.use(cors(corsOptions))
 app.options('*', cors(corsOptions))
 app.use(express.json({ limit: '2mb' }))
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')))
+
+app.get('/', (_req, res) => {
+  res.json({
+    message: 'Shelter API is running.',
+    status: 'ok',
+    health: '/health',
+    routes: [
+      '/api/auth',
+      '/api/rooms',
+      '/api/admin',
+      '/api/bookings',
+      '/api/premium',
+      '/api/messages',
+      '/api/payments',
+    ],
+  })
+})
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' })
@@ -46,7 +71,10 @@ app.use('/api/payments', paymentsRoutes)
 
 // 404 + error handler (production-friendly JSON)
 app.use((_req, res) => {
-  res.status(404).json({ message: 'Not Found' })
+  res.status(404).json({
+    message: 'Not Found',
+    hint: 'Try /health or one of the /api/* routes.',
+  })
 })
 
 // eslint-disable-next-line no-unused-vars
