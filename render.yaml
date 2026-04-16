@@ -40,13 +40,13 @@ services:
       - key: PGSSLMODE
         value: require
       - key: FRONTEND_URL
-        value: https://shelter.onrender.com
+        sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
       - key: GOOGLE_REDIRECT_URI
-        value: https://shelter-api.onrender.com/api/auth/google/callback
+        sync: false
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT
@@ -67,4 +67,4 @@ services:
     envVars:
       - key: VITE_API_BASE_URL
         # Must point at the deployed backend hostname + /api.
-        value: https://shelter-api.onrender.com/api
+        sync: false
