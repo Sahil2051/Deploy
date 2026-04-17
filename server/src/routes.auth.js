@@ -20,6 +20,7 @@ const smtpPort = Number(process.env.SMTP_PORT ?? 587)
 const smtpUser = process.env.SMTP_USER
 const smtpPass = process.env.SMTP_PASS
 const smtpFrom = process.env.SMTP_FROM || smtpUser || 'no-reply@shelter.local'
+const exposeSignupOtp = String(process.env.SIGNUP_OTP_DEBUG || '').toLowerCase() === 'true'
 
 const mailTransport = smtpHost && smtpUser && smtpPass
   ? nodemailer.createTransport({
@@ -224,7 +225,10 @@ router.post('/signup/request-otp', async (req, res) => {
       return res.status(503).json({ message: 'Failed to send verification code email.' })
     }
 
-    return res.json({ message: 'Verification code sent to your email.' })
+    return res.json({
+      message: 'Verification code sent to your email.',
+      ...(exposeSignupOtp ? { verificationCode: otp } : {}),
+    })
   } catch (error) {
     console.error('Signup OTP request error', error)
     return res.status(500).json({ message: 'Failed to send verification code.' })
