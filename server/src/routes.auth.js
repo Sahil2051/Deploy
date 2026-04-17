@@ -169,8 +169,8 @@ const insertSignupUser = async ({ fullName, age, address, email, phoneNumber, pa
   const normalizedPhone = phoneNumber || await findUniquePhoneSeed(normalizedEmail)
 
   await db.execute(
-    `INSERT INTO users (full_name, age, address_line, email, phone_number, password_hash)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO users (full_name, age, address_line, email, phone_number, password_hash, is_verified, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, FALSE, NOW(), NOW())`,
     [fullName.trim(), age, address.trim(), normalizedEmail, normalizedPhone, passwordHash]
   )
 }
@@ -523,8 +523,8 @@ router.get('/google/callback', async (req, res) => {
       const generatedPasswordHash = await bcrypt.hash(generatedPassword, 10)
 
       const [insertResult] = await db.execute(
-        `INSERT INTO users (full_name, age, address_line, email, phone_number, password_hash, is_verified)
-         VALUES (?, ?, ?, ?, ?, ?, 1)`,
+        `INSERT INTO users (full_name, age, address_line, email, phone_number, password_hash, is_verified, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, TRUE, NOW(), NOW())`,
         [fullName, 18, 'Added via Google login', email, generatedPhone, generatedPasswordHash]
       )
 
