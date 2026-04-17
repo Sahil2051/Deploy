@@ -9,6 +9,7 @@ const bookingsRoutes = require('./routes.bookings')
 const premiumRoutes = require('./routes.premium')
 const messagesRoutes = require('./routes.messages')
 const paymentsRoutes = require('./routes.payments')
+const surveyRoutes = require('./routes.survey')
 
 const app = express()
 
@@ -64,6 +65,7 @@ app.get('/', (req, res) => {
     '/api/premium',
     '/api/messages',
     '/api/payments',
+    '/api/survey',
   ]
 
   res
@@ -125,6 +127,7 @@ app.use('/api/bookings', bookingsRoutes)
 app.use('/api/premium', premiumRoutes)
 app.use('/api/messages', messagesRoutes)
 app.use('/api/payments', paymentsRoutes)
+app.use('/api/survey', surveyRoutes)
 
 // 404 + error handler (production-friendly JSON)
 app.use((_req, res) => {

@@ -137,6 +137,54 @@ const initialBookingState = {
   specialRequests: '',
 }
 
+type SurveyFormState = {
+  q1: string
+  q2: string
+  q3: string
+  q4: string
+  q5: string
+  q6: string
+  q7: string
+  q8: string
+  q9: string
+  q10: string
+  q11: string
+  q12: string
+  q13: string
+}
+
+const initialSurveyState: SurveyFormState = {
+  q1: '',
+  q2: '',
+  q3: '',
+  q4: '',
+  q5: '',
+  q6: '',
+  q7: '',
+  q8: '',
+  q9: '',
+  q10: '',
+  q11: '',
+  q12: '',
+  q13: '',
+}
+
+const surveyQuestions: Array<{ key: keyof SurveyFormState; label: string; type: 'rating' | 'text' | 'textarea' }> = [
+  { key: 'q1', label: '1. How easy was it to sign up on Shelter?', type: 'rating' },
+  { key: 'q2', label: '2. How clear was the login process?', type: 'rating' },
+  { key: 'q3', label: '3. How satisfied are you with room search?', type: 'rating' },
+  { key: 'q4', label: '4. How useful are room details and photos?', type: 'rating' },
+  { key: 'q5', label: '5. How smooth was the booking flow?', type: 'rating' },
+  { key: 'q6', label: '6. How would you rate app speed/performance?', type: 'rating' },
+  { key: 'q7', label: '7. How easy is navigation between sections?', type: 'rating' },
+  { key: 'q8', label: '8. How likely are you to use Shelter again?', type: 'rating' },
+  { key: 'q9', label: '9. Which feature did you like the most?', type: 'text' },
+  { key: 'q10', label: '10. Which part felt confusing or difficult?', type: 'text' },
+  { key: 'q11', label: '11. What feature should we add next?', type: 'text' },
+  { key: 'q12', label: '12. Any issue you faced while using Shelter?', type: 'textarea' },
+  { key: 'q13', label: '13. Additional feedback for the team', type: 'textarea' },
+]
+
 interface UserInquiry {
   id: number
   room_id: number
@@ -149,7 +197,7 @@ interface UserInquiry {
   created_at: string
 }
 
-type ViewState = 'home' | 'rooms' | 'premium' | 'docs' | 'room-details' | 'messages'
+type ViewState = 'home' | 'rooms' | 'premium' | 'docs' | 'survey' | 'room-details' | 'messages'
 type ModalView = 'signup' | 'login' | 'register-room' | 'admin-verify' | 'account' | null
 
 type Message = {
@@ -265,6 +313,9 @@ function App() {
   const [forgotPasswordStep, setForgotPasswordStep] = useState<1 | 2>(1)
   const [passwordActionMessage, setPasswordActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [passwordActionLoading, setPasswordActionLoading] = useState(false)
+  const [surveyData, setSurveyData] = useState<SurveyFormState>(initialSurveyState)
+  const [surveySubmitting, setSurveySubmitting] = useState(false)
+  const [surveyMessage, setSurveyMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
     setToast({ text, type })
@@ -1034,6 +1085,39 @@ function App() {
   const handleForgotPasswordInput = (event: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.target
     setForgotPasswordData((prev) => ({ ...prev, [name]: value }))
+  }
+
+  const handleSurveyChange = (key: keyof SurveyFormState, value: string) => {
+    setSurveyData((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const handleSurveySubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setSurveySubmitting(true)
+    setSurveyMessage(null)
+
+    try {
+      const response = await fetchWithProxyFallback('/survey/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user?.id ?? null,
+          answers: surveyData,
+        }),
+      })
+
+      const payload = await parseApiPayload(response)
+      if (!response.ok) {
+        throw new Error(payload?.message || 'Failed to submit survey.')
+      }
+
+      setSurveyMessage({ type: 'success', text: payload?.message || 'Survey submitted successfully.' })
+      setSurveyData(initialSurveyState)
+    } catch (error) {
+      setSurveyMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to submit survey.' })
+    } finally {
+      setSurveySubmitting(false)
+    }
   }
 
   const handlePasswordChangeSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -1953,6 +2037,12 @@ function App() {
           >
             <span>📄</span> Docs
           </button>
+          <button
+            className={`nav-link ${(currentView as string) === 'survey' ? 'active' : ''}`}
+            onClick={() => setCurrentView('survey')}
+          >
+            <span>📝</span> Survey
+          </button>
         </div>
       </nav >
 
@@ -1998,6 +2088,63 @@ function App() {
               </p>
             </div>
           </div>
+        </div>
+      )}
+
+      {currentView === 'survey' && (
+        <div style={{ maxWidth: '960px', margin: '2rem auto 4rem' }} className="glass-card">
+          <div style={{ marginBottom: '1.5rem' }}>
+            <p className="eyebrow">Post Survey</p>
+            <h1 style={{ margin: 0 }}>Tell Us About Your Experience</h1>
+            <p style={{ color: '#94a3b8' }}>
+              Please answer all 13 questions. Your feedback helps us improve Shelter.
+            </p>
+          </div>
+
+          <form className="auth-form" onSubmit={handleSurveySubmit}>
+            {surveyQuestions.map((question) => (
+              <label key={question.key}>
+                <span>{question.label}</span>
+                {question.type === 'rating' ? (
+                  <select
+                    value={surveyData[question.key]}
+                    onChange={(event) => handleSurveyChange(question.key, event.target.value)}
+                    required
+                  >
+                    <option value="">Select rating</option>
+                    <option value="1">1 - Very Poor</option>
+                    <option value="2">2 - Poor</option>
+                    <option value="3">3 - Average</option>
+                    <option value="4">4 - Good</option>
+                    <option value="5">5 - Excellent</option>
+                  </select>
+                ) : question.type === 'textarea' ? (
+                  <textarea
+                    value={surveyData[question.key]}
+                    onChange={(event) => handleSurveyChange(question.key, event.target.value)}
+                    rows={4}
+                    required
+                  />
+                ) : (
+                  <input
+                    value={surveyData[question.key]}
+                    onChange={(event) => handleSurveyChange(question.key, event.target.value)}
+                    required
+                  />
+                )}
+              </label>
+            ))}
+
+            <button className="primary-cta" type="submit" disabled={surveySubmitting}>
+              {surveySubmitting ? 'Submitting Survey...' : 'Submit Survey'}
+            </button>
+          </form>
+
+          {surveyMessage && (
+            <p className={`form-feedback ${surveyMessage.type === 'success' ? 'success' : 'error'}`}>
+              {surveyMessage.text}
+            </p>
+          )}
         </div>
       )}
 
