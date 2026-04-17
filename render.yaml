@@ -40,6 +40,7 @@ services:
       - key: PGSSLMODE
         value: require
       - key: FRONTEND_URL
+        # Set this to the deployed frontend URL, not the API service URL.
         sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
