@@ -848,7 +848,7 @@ function App() {
     setSignupMessage(null)
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/signup/request-otp`, {
+      const response = await fetchWithProxyFallback('/auth/signup/request-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -860,7 +860,7 @@ function App() {
         }),
       })
 
-      const payload = await response.json()
+      const payload = await parseApiPayload(response)
 
       if (!response.ok) {
         throw new Error(payload?.message ?? 'Failed to send verification code')
@@ -900,6 +900,7 @@ function App() {
         }
 
         const response = await fetch(`${API_BASE_URL}/auth/signup/verify-otp`, {
+        const response = await fetchWithProxyFallback('/auth/signup/verify-otp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -908,7 +909,7 @@ function App() {
           }),
         })
 
-        const payload = await response.json()
+        const payload = await parseApiPayload(response)
 
         if (!response.ok) {
           throw new Error(payload?.message ?? 'OTP verification failed')
@@ -925,7 +926,7 @@ function App() {
         return
       }
 
-      const response = await fetch(`${API_BASE_URL}/auth/signup`, {
+      const response = await fetchWithProxyFallback('/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -939,7 +940,7 @@ function App() {
         }),
       })
 
-      const payload = await response.json()
+      const payload = await parseApiPayload(response)
 
       if (!response.ok) {
         throw new Error(payload?.message ?? 'Signup failed')
@@ -984,7 +985,7 @@ function App() {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      const response = await fetchWithProxyFallback('/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -993,7 +994,7 @@ function App() {
         }),
       })
 
-      const payload = await response.json()
+      const payload = await parseApiPayload(response)
 
       if (!response.ok) {
         throw new Error(payload?.message ?? 'Login failed')
