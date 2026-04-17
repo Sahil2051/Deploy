@@ -967,15 +967,13 @@ function App() {
     const credentialValue = loginMethod === 'phone'
       ? `${authCountryCode}${rawCredential}`
       : rawCredential
+    const credentialDigits = credentialValue.replace(/\D/g, '')
+    const adminPasswordMatch = loginData.password.trim().toLowerCase() === 'sahil@123'
 
     // Check if this is an admin login attempt BEFORE API call
-    const isAdminAttempt = (
-      rawCredential === '9746872051' ||
-      credentialValue.trim() === '9746872051' ||
-      credentialValue.trim() === `${authCountryCode}9746872051`
-    ) && loginData.password === 'sahil@123'
-
-    if (isAdminAttempt) {
+    const isAdminAttempt = (credentialDigits === '9746872051' || credentialDigits === '9779746872051') && adminPasswordMatch
+      {
+        (currentView === 'home' || currentView === 'rooms') && (
       // Show admin verification modal instead of logging in normally
       setActiveModal('admin-verify')
       setLoginData(initialLoginState)
@@ -2197,7 +2195,7 @@ function App() {
               </button>
             </div>
 
-            {currentView === 'home' && (
+            {(currentView === 'home' || currentView === 'rooms') && (
               <div className="auth-buttons-header">
                 {isAdmin ? (
                   <>
