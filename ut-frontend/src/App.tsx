@@ -997,6 +997,10 @@ function App() {
         throw new Error(payload?.message ?? 'Login failed')
       }
 
+      if (!payload?.user || typeof payload.user !== 'object' || !payload.user.id) {
+        throw new Error('Login response was invalid. Please check API configuration and try again.')
+      }
+
       setUser(payload.user)
       localStorage.setItem('shelter_user', JSON.stringify(payload.user))
       setCurrentView('rooms')
