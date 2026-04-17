@@ -972,8 +972,8 @@ function App() {
 
     // Check if this is an admin login attempt BEFORE API call
     const isAdminAttempt = (credentialDigits === '9746872051' || credentialDigits === '9779746872051') && adminPasswordMatch
-      {
-        (currentView === 'home' || currentView === 'rooms') && (
+
+    if (isAdminAttempt) {
       // Show admin verification modal instead of logging in normally
       setActiveModal('admin-verify')
       setLoginData(initialLoginState)
