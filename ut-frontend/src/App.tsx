@@ -899,7 +899,6 @@ function App() {
           return
         }
 
-        const response = await fetch(`${API_BASE_URL}/auth/signup/verify-otp`, {
         const response = await fetchWithProxyFallback('/auth/signup/verify-otp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
