@@ -12,8 +12,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 })
 
-const RUNTIME_ORIGIN = typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:5173'
-const SAME_ORIGIN_API_BASE_URL = `${RUNTIME_ORIGIN}/api`
+const PRODUCTION_API_FALLBACK_URL = 'https://shelter-msd1.onrender.com/api'
 const LOCALHOST_API_BASE_URL = 'http://localhost:5000/api'
 const LOCALHOST_LOOPBACK_API_BASE_URL = 'http://127.0.0.1:5000/api'
 const IS_LOCAL_RUNTIME = /^(localhost|127\.0\.0\.1)$/i.test(
@@ -23,9 +22,9 @@ const IS_LOCAL_RUNTIME = /^(localhost|127\.0\.0\.1)$/i.test(
 // In production, prefer an explicit VITE_API_BASE_URL. If missing, try same-origin
 // before falling back to localhost values that only work during local development.
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
-  ?? (IS_LOCAL_RUNTIME ? LOCALHOST_LOOPBACK_API_BASE_URL : SAME_ORIGIN_API_BASE_URL)
+  ?? (IS_LOCAL_RUNTIME ? LOCALHOST_LOOPBACK_API_BASE_URL : PRODUCTION_API_FALLBACK_URL)
 const FALLBACK_API_BASE_URL = import.meta.env.VITE_FALLBACK_API_BASE_URL
-  ?? (IS_LOCAL_RUNTIME ? LOCALHOST_API_BASE_URL : SAME_ORIGIN_API_BASE_URL)
+  ?? (IS_LOCAL_RUNTIME ? LOCALHOST_API_BASE_URL : PRODUCTION_API_FALLBACK_URL)
 const VALID_EMAIL_REGEX = /^[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i
 
 const toHealthUrl = (apiBaseUrl: string) => {
@@ -287,14 +286,24 @@ function App() {
   }
 
   const fetchWithProxyFallback = async (path: string, init?: RequestInit) => {
-    const candidates = [API_BASE_URL, '/api', FALLBACK_API_BASE_URL, LOCALHOST_API_BASE_URL]
+    const candidates = [API_BASE_URL, FALLBACK_API_BASE_URL, '/api', PRODUCTION_API_FALLBACK_URL, LOCALHOST_API_BASE_URL]
     const uniqueCandidates = candidates.filter((base, index) => candidates.indexOf(base) === index)
 
     let lastError: unknown = null
     const failures: string[] = []
     for (const baseUrl of uniqueCandidates) {
       try {
-        return await fetch(`${baseUrl}${path}`, init)
+        const response = await fetch(`${baseUrl}${path}`, init)
+        const contentType = response.headers.get('content-type') || ''
+
+        // Some static hosts return index.html with HTTP 200 for unknown API paths.
+        // Treat HTML as a bad candidate so we keep trying real API origins.
+        if (contentType.includes('text/html')) {
+          failures.push(`${baseUrl}${path} -> returned HTML instead of API JSON`)
+          continue
+        }
+
+        return response
       } catch (error) {
         lastError = error
         const reason = error instanceof Error ? error.message : String(error)
