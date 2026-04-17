@@ -303,7 +303,7 @@ router.post('/signup', async (req, res) => {
   const hasEmail = Boolean(String(email || '').trim())
   const hasPhone = Boolean(String(phoneNumber || '').trim())
 
-  if (hasEmail) {
+  if (hasEmail && mailTransport) {
     return res.status(400).json({ message: 'Email signups must use verification code first.' })
   }
 
@@ -329,6 +329,13 @@ router.post('/signup', async (req, res) => {
   }
 
   try {
+    if (normalizedEmail) {
+      const [byEmail] = await db.execute('SELECT id FROM users WHERE email = ? LIMIT 1', [normalizedEmail])
+      if (byEmail.length > 0) {
+        return res.status(409).json({ message: 'Email already registered.' })
+      }
+    }
+
     if (normalizedPhone) {
       const [byPhone] = await db.execute('SELECT id FROM users WHERE phone_number = ? LIMIT 1', [normalizedPhone])
       if (byPhone.length > 0) {

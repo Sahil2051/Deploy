@@ -1001,6 +1001,7 @@ function App() {
 
       setUser(payload.user)
       localStorage.setItem('shelter_user', JSON.stringify(payload.user))
+      setCurrentView('rooms')
       setLoginMessage({ type: 'success', text: payload?.message ?? 'Login successful' })
       launchCelebration('Welcome Aboard', `Welcome ${payload.user?.fullName || 'Explorer'}! Ready for your next shelter mission.`)
       setLoginData(initialLoginState)
@@ -1232,6 +1233,7 @@ function App() {
   const handleAdminVerify = () => {
     if (adminMasterPassword === 'Password@6969') {
       setIsAdmin(true)
+      setCurrentView('rooms')
       localStorage.setItem('shelter_admin', 'true')
       setActiveModal(null)
       setAdminMasterPassword('')
