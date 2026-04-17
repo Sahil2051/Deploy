@@ -10,9 +10,14 @@
 #
 # After deploy:
 # 1. Run migrations once: Shell for shelter-api → cd server && npm run db:schema
-# 2. Set secrets in the dashboard: FRONTEND_URL, GOOGLE_*, SMTP_*, GOOGLE_REDIRECT_URI (https://your-api.onrender.com/...)
+# 2. Set secrets in the dashboard:
+#    - FRONTEND_URL = the deployed frontend URL (for example, https://your-frontend.onrender.com)
+#    - PASSWORD_RESET_FRONTEND_URL = the same frontend URL if password reset links should land in the UI
+#    - GOOGLE_REDIRECT_URI = the API callback URL, for example https://your-api.onrender.com/api/auth/google/callback
+#    - GOOGLE_*, SMTP_* = your live credentials
 # 3. For the Vite app (ut-frontend), add a Static Site with build "npm install && npm run build",
 #    publish "dist", and set VITE_API_BASE_URL to https://<your-api-host>/api at build time.
+# 4. Do not point FRONTEND_URL at the API service itself; that will keep the root URL on the backend.
 
 databases:
   - name: shelter-postgres
